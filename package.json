@@ -11738,7 +11738,7 @@
 		"html-loader": "4.1.0",
 		"html-webpack-plugin": "5.5.0",
 		"image-minimizer-webpack-plugin": "3.4.0",
-		"json5": "2.2.1",
+		"json5": "2.2.2",
 		"license-checker-rseidelsohn": "3.1.0",
 		"mini-css-extract-plugin": "2.6.1",
 		"mocha": "10.0.0",
