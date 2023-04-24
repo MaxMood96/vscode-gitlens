@@ -11721,7 +11721,7 @@
 		"copy-webpack-plugin": "11.0.0",
 		"csp-html-webpack-plugin": "5.1.0",
 		"css-loader": "6.7.1",
-		"css-minimizer-webpack-plugin": "4.1.0",
+		"css-minimizer-webpack-plugin": "5.0.0",
 		"cssnano-preset-advanced": "5.3.8",
 		"esbuild": "0.15.7",
 		"esbuild-loader": "2.20.0",
