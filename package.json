@@ -11732,7 +11732,7 @@
 		"eslint-plugin-anti-trojan-source": "1.1.0",
 		"eslint-plugin-import": "2.26.0",
 		"eslint-plugin-lit": "1.6.1",
-		"fantasticon": "1.2.3",
+		"fantasticon": "3.0.0",
 		"fork-ts-checker-webpack-plugin": "6.5.2",
 		"glob": "8.0.3",
 		"html-loader": "4.1.0",
