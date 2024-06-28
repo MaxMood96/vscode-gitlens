@@ -2,6 +2,8 @@ import type {
 	Account,
 	ActionablePullRequest,
 	AzureDevOps,
+	AzureOrganization,
+	AzureProject,
 	Bitbucket,
 	EnterpriseOptions,
 	GetRepoInput,
@@ -28,12 +30,13 @@ import type { Account as UserAccount } from '../../../git/models/author';
 import type { IssueMember, SearchedIssue } from '../../../git/models/issue';
 import { RepositoryAccessLevel } from '../../../git/models/issue';
 import type {
-	PullRequest,
 	PullRequestMember,
 	PullRequestRefs,
 	PullRequestReviewer,
+	PullRequestState,
 } from '../../../git/models/pullRequest';
 import {
+	PullRequest,
 	PullRequestMergeableState,
 	PullRequestReviewDecision,
 	PullRequestReviewState,
@@ -42,6 +45,7 @@ import {
 import type { ProviderReference } from '../../../git/models/remoteProvider';
 import type { RepositoryIdentityDescriptor } from '../../../gk/models/repositoryIdentities';
 import type { EnrichableItem } from '../../focus/enrichmentService';
+import type { Integration } from '../integration';
 import { getEntityIdentifierInput } from './utils';
 
 export type ProviderAccount = Account;
@@ -53,6 +57,8 @@ export type ProviderIssue = Issue;
 export type ProviderEnterpriseOptions = EnterpriseOptions;
 export type ProviderJiraProject = JiraProject;
 export type ProviderJiraResource = JiraResource;
+export type ProviderAzureProject = AzureProject;
+export type ProviderAzureResource = AzureOrganization;
 export const ProviderPullRequestReviewState = GitPullRequestReviewState;
 export const ProviderBuildStatusState = GitBuildStatusState;
 
@@ -78,6 +84,16 @@ export enum SelfHostedIntegrationId {
 const selfHostedIntegrationIds: SelfHostedIntegrationId[] = [
 	SelfHostedIntegrationId.GitHubEnterprise,
 	SelfHostedIntegrationId.GitLabSelfHosted,
+] as const;
+
+export const supportedIntegrationIds: IntegrationId[] = [
+	HostingIntegrationId.GitHub,
+	HostingIntegrationId.GitLab,
+	HostingIntegrationId.Bitbucket,
+	HostingIntegrationId.AzureDevOps,
+	IssueIntegrationId.Jira,
+	IssueIntegrationId.Trello,
+	...selfHostedIntegrationIds,
 ] as const;
 
 export function isSelfHostedIntegrationId(id: IntegrationId): id is SelfHostedIntegrationId {
@@ -126,6 +142,20 @@ export interface GetPullRequestsOptions {
 	mentionLogin?: string;
 	cursor?: string; // stringified JSON object of type { type: 'cursor' | 'page'; value: string | number } | {}
 	baseUrl?: string;
+}
+
+export interface GetPullRequestsForUserOptions {
+	includeFromArchivedRepos?: boolean;
+	cursor?: string; // stringified JSON object of type { type: 'cursor' | 'page'; value: string | number } | {}
+	baseUrl?: string;
+}
+
+export interface GetPullRequestsForUserInput extends GetPullRequestsForUserOptions {
+	userId: string;
+}
+
+export interface GetPullRequestsAssociatedWithUserInput extends GetPullRequestsForUserOptions {
+	username: string;
 }
 
 export interface GetPullRequestsForRepoInput extends GetPullRequestsOptions {
@@ -195,6 +225,16 @@ export type GetPullRequestsForRepoFn = (
 	options?: EnterpriseOptions,
 ) => Promise<{ data: ProviderPullRequest[]; pageInfo?: PageInfo }>;
 
+export type GetPullRequestsForUserFn = (
+	input: GetPullRequestsForUserInput | GetPullRequestsAssociatedWithUserInput,
+	options?: EnterpriseOptions,
+) => Promise<{ data: ProviderPullRequest[]; pageInfo?: PageInfo }>;
+
+export type GetPullRequestsForAzureProjectsFn = (
+	input: { projects: { namespace: string; project: string }[]; authorLogin?: string; assigneeLogins?: string[] },
+	options?: EnterpriseOptions,
+) => Promise<{ data: ProviderPullRequest[] }>;
+
 export type GetIssueFn = (
 	input: { resourceId: string; number: string },
 	options?: EnterpriseOptions,
@@ -220,7 +260,10 @@ export type GetReposForAzureProjectFn = (
 	options?: EnterpriseOptions,
 ) => Promise<{ data: ProviderRepository[]; pageInfo?: PageInfo }>;
 
-export type GetCurrentUserFn = (options?: EnterpriseOptions) => Promise<{ data: ProviderAccount }>;
+export type GetCurrentUserFn = (
+	input: Record<string, never>,
+	options?: EnterpriseOptions,
+) => Promise<{ data: ProviderAccount }>;
 export type GetCurrentUserForInstanceFn = (
 	input: { namespace: string },
 	options?: EnterpriseOptions,
@@ -235,6 +278,14 @@ export type GetJiraProjectsForResourcesFn = (
 	input: { resourceIds: string[] },
 	options?: EnterpriseOptions,
 ) => Promise<{ data: JiraProject[] }>;
+export type GetAzureResourcesForUserFn = (
+	input: { userId: string },
+	options?: EnterpriseOptions,
+) => Promise<{ data: AzureOrganization[] }>;
+export type GetAzureProjectsForResourceFn = (
+	input: { namespace: string; cursor?: string },
+	options?: EnterpriseOptions,
+) => Promise<{ data: AzureProject[]; pageInfo?: PageInfo }>;
 export type GetIssuesForProjectFn = (
 	input: GetIssuesForProjectInput,
 	options?: EnterpriseOptions,
@@ -248,6 +299,8 @@ export interface ProviderInfo extends ProviderMetadata {
 	provider: GitHub | GitLab | Bitbucket | Jira | Trello | AzureDevOps;
 	getPullRequestsForReposFn?: GetPullRequestsForReposFn;
 	getPullRequestsForRepoFn?: GetPullRequestsForRepoFn;
+	getPullRequestsForUserFn?: GetPullRequestsForUserFn;
+	getPullRequestsForAzureProjectsFn?: GetPullRequestsForAzureProjectsFn;
 	getIssueFn?: GetIssueFn;
 	getIssuesForReposFn?: GetIssuesForReposFn;
 	getIssuesForRepoFn?: GetIssuesForRepoFn;
@@ -256,7 +309,9 @@ export interface ProviderInfo extends ProviderMetadata {
 	getCurrentUserForInstanceFn?: GetCurrentUserForInstanceFn;
 	getCurrentUserForResourceFn?: GetCurrentUserForResourceFn;
 	getJiraResourcesForCurrentUserFn?: GetJiraResourcesForCurrentUserFn;
+	getAzureResourcesForUserFn?: GetAzureResourcesForUserFn;
 	getJiraProjectsForResourcesFn?: GetJiraProjectsForResourcesFn;
+	getAzureProjectsForResourceFn?: GetAzureProjectsForResourceFn;
 	getIssuesForProjectFn?: GetIssuesForProjectFn;
 	getReposForAzureProjectFn?: GetReposForAzureProjectFn;
 	getIssuesForResourceForCurrentUserFn?: GetIssuesForResourceForCurrentUserFn;
@@ -270,7 +325,6 @@ export interface ProviderMetadata {
 	scopes: string[];
 	supportedPullRequestFilters?: PullRequestFilter[];
 	supportedIssueFilters?: IssueFilter[];
-	usesPAT?: boolean;
 }
 
 export type Providers = Record<IntegrationId, ProviderInfo>;
@@ -292,7 +346,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'username' property on account for issue filters
 		supportedIssueFilters: [IssueFilter.Author, IssueFilter.Assignee, IssueFilter.Mention],
 		scopes: ['repo', 'read:user', 'user:email'],
-		usesPAT: true,
 	},
 	[SelfHostedIntegrationId.GitHubEnterprise]: {
 		domain: '',
@@ -309,7 +362,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'username' property on account for issue filters
 		supportedIssueFilters: [IssueFilter.Author, IssueFilter.Assignee, IssueFilter.Mention],
 		scopes: ['repo', 'read:user', 'user:email'],
-		usesPAT: true,
 	},
 	[HostingIntegrationId.GitLab]: {
 		domain: 'gitlab.com',
@@ -325,7 +377,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'username' property on account for issue filters
 		supportedIssueFilters: [IssueFilter.Author, IssueFilter.Assignee],
 		scopes: ['read_api', 'read_user', 'read_repository'],
-		usesPAT: true,
 	},
 	[SelfHostedIntegrationId.GitLabSelfHosted]: {
 		domain: '',
@@ -341,7 +392,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'username' property on account for issue filters
 		supportedIssueFilters: [IssueFilter.Author, IssueFilter.Assignee],
 		scopes: ['read_api', 'read_user', 'read_repository'],
-		usesPAT: true,
 	},
 	[HostingIntegrationId.Bitbucket]: {
 		domain: 'bitbucket.org',
@@ -350,7 +400,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'id' property on account for PR filters
 		supportedPullRequestFilters: [PullRequestFilter.Author],
 		scopes: ['account:read', 'repository:read', 'pullrequest:read', 'issue:read'],
-		usesPAT: true,
 	},
 	[HostingIntegrationId.AzureDevOps]: {
 		domain: 'dev.azure.com',
@@ -362,7 +411,6 @@ export const providersMetadata: ProvidersMetadata = {
 		// Use 'name' property on account for issue filters
 		supportedIssueFilters: [IssueFilter.Author, IssueFilter.Assignee, IssueFilter.Mention],
 		scopes: ['vso.code', 'vso.identity', 'vso.project', 'vso.profile', 'vso.work'],
-		usesPAT: true,
 	},
 	[IssueIntegrationId.Jira]: {
 		domain: 'atlassian.net',
@@ -514,6 +562,20 @@ export const toProviderBuildStatusState = {
 	[PullRequestStatusCheckRollupState.Pending]: GitBuildStatusState.Pending,
 };
 
+export const fromProviderBuildStatusState = {
+	[GitBuildStatusState.Success]: PullRequestStatusCheckRollupState.Success,
+	[GitBuildStatusState.Failed]: PullRequestStatusCheckRollupState.Failed,
+	[GitBuildStatusState.Pending]: PullRequestStatusCheckRollupState.Pending,
+	[GitBuildStatusState.ActionRequired]: PullRequestStatusCheckRollupState.Failed,
+	// TODO: The rest of these are defaulted because we don't have a matching state for them
+	[GitBuildStatusState.Error]: undefined,
+	[GitBuildStatusState.Cancelled]: undefined,
+	[GitBuildStatusState.OptionalActionRequired]: undefined,
+	[GitBuildStatusState.Skipped]: undefined,
+	[GitBuildStatusState.Running]: undefined,
+	[GitBuildStatusState.Warning]: undefined,
+};
+
 export const toProviderPullRequestReviewState = {
 	[PullRequestReviewState.Approved]: GitPullRequestReviewState.Approved,
 	[PullRequestReviewState.ChangesRequested]: GitPullRequestReviewState.ChangesRequested,
@@ -523,10 +585,27 @@ export const toProviderPullRequestReviewState = {
 	[PullRequestReviewState.Pending]: null,
 };
 
+export const fromProviderPullRequestReviewState = {
+	[GitPullRequestReviewState.Approved]: PullRequestReviewState.Approved,
+	[GitPullRequestReviewState.ChangesRequested]: PullRequestReviewState.ChangesRequested,
+	[GitPullRequestReviewState.Commented]: PullRequestReviewState.Commented,
+	[GitPullRequestReviewState.ReviewRequested]: PullRequestReviewState.ReviewRequested,
+};
+
 export const toProviderPullRequestMergeableState = {
 	[PullRequestMergeableState.Mergeable]: GitPullRequestMergeableState.Mergeable,
 	[PullRequestMergeableState.Conflicting]: GitPullRequestMergeableState.Conflicts,
 	[PullRequestMergeableState.Unknown]: GitPullRequestMergeableState.Unknown,
+};
+
+export const fromProviderPullRequestMergeableState = {
+	[GitPullRequestMergeableState.Mergeable]: PullRequestMergeableState.Mergeable,
+	[GitPullRequestMergeableState.Conflicts]: PullRequestMergeableState.Conflicting,
+	[GitPullRequestMergeableState.Unknown]: PullRequestMergeableState.Unknown,
+	[GitPullRequestMergeableState.Behind]: PullRequestMergeableState.Unknown,
+	[GitPullRequestMergeableState.Blocked]: PullRequestMergeableState.Unknown,
+	[GitPullRequestMergeableState.UnknownAndBlocked]: PullRequestMergeableState.Unknown,
+	[GitPullRequestMergeableState.Unstable]: PullRequestMergeableState.Unknown,
 };
 
 export function toProviderReviews(reviewers: PullRequestReviewer[]): ProviderPullRequest['reviews'] {
@@ -536,6 +615,30 @@ export function toProviderReviews(reviewers: PullRequestReviewer[]): ProviderPul
 			reviewer: toProviderAccount(reviewer.reviewer),
 			state: toProviderPullRequestReviewState[reviewer.state] ?? GitPullRequestReviewState.ReviewRequested,
 		}));
+}
+
+export function toReviewRequests(reviews: ProviderPullRequest['reviews']): PullRequestReviewer[] | undefined {
+	return reviews == null
+		? undefined
+		: reviews
+				?.filter(r => r.state === GitPullRequestReviewState.ReviewRequested)
+				.map(r => ({
+					isCodeOwner: false, // TODO: Find this value, and implement in the shared lib if needed
+					reviewer: fromProviderAccount(r.reviewer),
+					state: PullRequestReviewState.ReviewRequested,
+				}));
+}
+
+export function toCompletedReviews(reviews: ProviderPullRequest['reviews']): PullRequestReviewer[] | undefined {
+	return reviews == null
+		? undefined
+		: reviews
+				?.filter(r => r.state !== GitPullRequestReviewState.ReviewRequested)
+				.map(r => ({
+					isCodeOwner: false, // TODO: Find this value, and implement in the shared lib if needed
+					reviewer: fromProviderAccount(r.reviewer),
+					state: fromProviderPullRequestReviewState[r.state],
+				}));
 }
 
 export function toProviderReviewDecision(
@@ -560,6 +663,25 @@ export function toProviderReviewDecision(
 	}
 }
 
+export const fromPullRequestReviewDecision = {
+	[GitPullRequestReviewState.Approved]: PullRequestReviewDecision.Approved,
+	[GitPullRequestReviewState.ChangesRequested]: PullRequestReviewDecision.ChangesRequested,
+	[GitPullRequestReviewState.Commented]: undefined,
+	[GitPullRequestReviewState.ReviewRequested]: PullRequestReviewDecision.ReviewRequired,
+};
+
+export function toProviderPullRequestState(state: PullRequestState): GitPullRequestState {
+	return state === 'opened'
+		? GitPullRequestState.Open
+		: state === 'closed'
+		  ? GitPullRequestState.Closed
+		  : GitPullRequestState.Merged;
+}
+
+export function fromProviderPullRequestState(state: GitPullRequestState): PullRequestState {
+	return state === GitPullRequestState.Open ? 'opened' : state === GitPullRequestState.Closed ? 'closed' : 'merged';
+}
+
 export function toProviderPullRequest(pr: PullRequest): ProviderPullRequest {
 	const prReviews = [...(pr.reviewRequests ?? []), ...(pr.latestReviews ?? [])];
 	return {
@@ -568,12 +690,7 @@ export function toProviderPullRequest(pr: PullRequest): ProviderPullRequest {
 		number: Number.parseInt(pr.id, 10),
 		title: pr.title,
 		url: pr.url,
-		state:
-			pr.state === 'opened'
-				? GitPullRequestState.Open
-				: pr.state === 'closed'
-				  ? GitPullRequestState.Closed
-				  : GitPullRequestState.Merged,
+		state: toProviderPullRequestState(pr.state),
 		isDraft: pr.isDraft ?? false,
 		createdDate: pr.createdDate,
 		updatedDate: pr.updatedDate,
@@ -664,6 +781,63 @@ export function toProviderPullRequest(pr: PullRequest): ProviderPullRequest {
 	};
 }
 
+export function fromProviderPullRequest(pr: ProviderPullRequest, integration: Integration): PullRequest {
+	return new PullRequest(
+		integration,
+		fromProviderAccount(pr.author),
+		pr.id,
+		pr.graphQLId,
+		pr.title,
+		pr.url ?? '',
+		{
+			owner: pr.repository.owner.login,
+			repo: pr.repository.name,
+		},
+		fromProviderPullRequestState(pr.state),
+		pr.createdDate,
+		pr.updatedDate,
+		pr.closedDate ?? undefined,
+		pr.mergedDate ?? undefined,
+		pr.mergeableState ? fromProviderPullRequestMergeableState[pr.mergeableState] : undefined,
+		pr.permissions?.canMerge || pr.permissions?.canMergeAndBypassProtections ? true : undefined,
+		{
+			base: {
+				branch: pr.baseRef?.name ?? '',
+				sha: pr.baseRef?.oid ?? '',
+				repo: pr.repository.name,
+				owner: pr.repository.owner.login,
+				exists: pr.baseRef != null,
+				url: pr.repository.remoteInfo?.cloneUrlHTTPS
+					? pr.repository.remoteInfo.cloneUrlHTTPS.replace(/\.git$/, '')
+					: '',
+			},
+			head: {
+				branch: pr.headRef?.name ?? '',
+				sha: pr.headRef?.oid ?? '',
+				repo: pr.headRepository?.name ?? '',
+				owner: pr.headRepository?.owner.login ?? '',
+				exists: pr.headRef != null,
+				url: pr.headRepository?.remoteInfo?.cloneUrlHTTPS
+					? pr.headRepository.remoteInfo.cloneUrlHTTPS.replace(/\.git$/, '')
+					: '',
+			},
+			isCrossRepository: pr.headRepository?.id !== pr.repository.id,
+		},
+		pr.isDraft,
+		pr.additions ?? undefined,
+		pr.deletions ?? undefined,
+		pr.commentCount ?? undefined,
+		pr.upvoteCount ?? undefined,
+		pr.reviewDecision ? fromPullRequestReviewDecision[pr.reviewDecision] : undefined,
+		toReviewRequests(pr.reviews),
+		toCompletedReviews(pr.reviews),
+		pr.assignees?.map(fromProviderAccount) ?? undefined,
+		pr.headCommit?.buildStatuses?.[0]?.state
+			? fromProviderBuildStatusState[pr.headCommit.buildStatuses[0].state]
+			: undefined,
+	);
+}
+
 export function toProviderPullRequestWithUniqueId(pr: PullRequest): PullRequestWithUniqueID {
 	return {
 		...toProviderPullRequest(pr),
@@ -680,6 +854,14 @@ export function toProviderAccount(account: PullRequestMember | IssueMember): Pro
 		email: '',
 		username: account.name ?? null,
 		id: account.name ?? null,
+	};
+}
+
+export function fromProviderAccount(account: ProviderAccount | null): PullRequestMember | IssueMember {
+	return {
+		name: account?.name ?? 'unknown',
+		avatarUrl: account?.avatarUrl ?? undefined,
+		url: account?.url ?? '',
 	};
 }
 

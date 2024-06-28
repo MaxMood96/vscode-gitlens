@@ -1,5 +1,5 @@
 import type { ConfigurationChangeEvent, Disposable, Event, ExtensionContext } from 'vscode';
-import { EventEmitter, ExtensionMode } from 'vscode';
+import { EventEmitter, ExtensionMode, Uri } from 'vscode';
 import { getSupportedGitProviders, getSupportedRepositoryPathMappingProvider } from '@env/providers';
 import type { AIProviderService } from './ai/aiProviderService';
 import { Autolinks } from './annotations/autolinks';
@@ -218,13 +218,12 @@ export class Container {
 		this._disposables.push(
 			(this._accountAuthentication = new AccountAuthenticationProvider(this, this._connection)),
 		);
+		this._disposables.push((this._uri = new UriService(this)));
 		this._disposables.push((this._subscription = new SubscriptionService(this, this._connection, previousVersion)));
 		this._disposables.push((this._organizations = new OrganizationService(this, this._connection)));
 
 		this._disposables.push((this._git = new GitProviderService(this)));
 		this._disposables.push(new GitFileSystemProvider(this));
-
-		this._disposables.push((this._uri = new UriService(this)));
 
 		this._disposables.push((this._deepLinks = new DeepLinkService(this)));
 
@@ -313,6 +312,9 @@ export class Container {
 				if (configuration.changed(e, 'launchpad.indicator.enabled')) {
 					this._focusIndicator?.dispose();
 					this._focusIndicator = undefined;
+
+					this.telemetry.sendEvent('launchpad/indicator/hidden');
+
 					if (configuration.get('launchpad.indicator.enabled')) {
 						this._disposables.push((this._focusIndicator = new FocusIndicator(this, this._focusProvider)));
 					}
@@ -631,21 +633,14 @@ export class Container {
 		return this._context.extension.id;
 	}
 
-	private _integrationAuthentication: IntegrationAuthenticationService | undefined;
-	get integrationAuthentication() {
-		if (this._integrationAuthentication == null) {
-			this._disposables.push(
-				(this._integrationAuthentication = new IntegrationAuthenticationService(this, this._connection)),
-			);
-		}
-
-		return this._integrationAuthentication;
-	}
-
 	private _integrations: IntegrationService | undefined;
 	get integrations(): IntegrationService {
 		if (this._integrations == null) {
-			this._disposables.push((this._integrations = new IntegrationService(this, this._connection)));
+			const authenticationService = new IntegrationAuthenticationService(this, this._connection);
+			this._disposables.push(
+				authenticationService,
+				(this._integrations = new IntegrationService(this, authenticationService)),
+			);
 		}
 		return this._integrations;
 	}
@@ -917,6 +912,39 @@ export class Container {
 				};
 			},
 		});
+	}
+
+	@memoize()
+	private get baseGkDevUri(): Uri {
+		if (this.env === 'staging') {
+			return Uri.parse('https://staging.gitkraken.dev');
+		}
+
+		if (this.env === 'dev') {
+			return Uri.parse('https://dev.gitkraken.dev');
+		}
+
+		return Uri.parse('https://gitkraken.dev');
+	}
+
+	getGkDevUri(path?: string, query?: string): Uri {
+		let uri = path != null ? Uri.joinPath(this.baseGkDevUri, path) : this.baseGkDevUri;
+		if (query != null) {
+			uri = uri.with({ query: query });
+		}
+		return uri;
+	}
+
+	getGkDevExchangeUri(token: string, successPath: string, failurePath?: string): Uri {
+		return Uri.joinPath(this.baseGkDevUri, `api/exchange/${token}`).with({
+			query: `success=${encodeURIComponent(successPath)}${
+				failurePath ? `&failure=${encodeURIComponent(failurePath)}` : ''
+			}`,
+		});
+	}
+
+	generateWebGkDevUrl(path?: string): string {
+		return this.getGkDevUri(path, '?source=gitlens').toString();
 	}
 }
 

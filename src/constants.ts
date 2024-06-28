@@ -2,10 +2,11 @@ import type { AnthropicModels } from './ai/anthropicProvider';
 import type { GeminiModels } from './ai/geminiProvider';
 import type { OpenAIModels } from './ai/openaiProvider';
 import type { VSCodeAIModels } from './ai/vscodeProvider';
-import type { ViewShowBranchComparison } from './config';
+import type { AnnotationStatus } from './annotations/annotationProvider';
+import type { FileAnnotationType, ViewShowBranchComparison } from './config';
 import type { Environment } from './container';
 import type { StoredSearchQuery } from './git/search';
-import type { Subscription, SubscriptionState } from './plus/gk/account/subscription';
+import type { Subscription, SubscriptionPlanId, SubscriptionState } from './plus/gk/account/subscription';
 import type { Integration } from './plus/integrations/integration';
 import type { IntegrationId, IssueIntegrationId } from './plus/integrations/providers/models';
 import type { TelemetryEventData } from './telemetry/telemetry';
@@ -44,7 +45,6 @@ export const urls = Object.freeze({
 	cli: 'https://gitkraken.com/cli?utm_source=gitlens-extension&utm_medium=in-app-links',
 	browserExtension: 'https://gitkraken.com/browser-extension?utm_source=gitlens-extension&utm_medium=in-app-links',
 	desktop: 'https://gitkraken.com/git-client?utm_source=gitlens-extension&utm_medium=in-app-links',
-	gkdev: 'https://gitkraken.dev?utm_source=gitlens-extension&utm_medium=in-app-links',
 
 	releaseNotes: 'https://help.gitkraken.com/gitlens/gitlens-release-notes-current/',
 	releaseAnnouncement:
@@ -294,10 +294,8 @@ export const enum Commands {
 	RefreshLaunchpad = 'gitlens.launchpad.refresh',
 	RefreshGraph = 'gitlens.graph.refresh',
 	RefreshHover = 'gitlens.refreshHover',
-	ResetAvatarCache = 'gitlens.resetAvatarCache',
+	Reset = 'gitlens.reset',
 	ResetAIKey = 'gitlens.resetAIKey',
-	ResetSuppressedWarnings = 'gitlens.resetSuppressedWarnings',
-	ResetTrackedUsage = 'gitlens.resetTrackedUsage',
 	ResetViewsLayout = 'gitlens.resetViewsLayout',
 	RevealCommitInView = 'gitlens.revealCommitInView',
 	ShareAsCloudPatch = 'gitlens.shareAsCloudPatch',
@@ -669,46 +667,46 @@ export type TreeViewNodeTypes =
 	| 'worktree'
 	| 'worktrees';
 
-export type ContextKeys =
-	| `${typeof extensionPrefix}:action:${string}`
-	| `${typeof extensionPrefix}:key:${Keys}`
-	| `${typeof extensionPrefix}:webview:${WebviewTypes | CustomEditorTypes}:visible`
-	| `${typeof extensionPrefix}:webviewView:${WebviewViewTypes}:visible`
-	| `${typeof extensionPrefix}:activeFileStatus`
-	| `${typeof extensionPrefix}:annotationStatus`
-	| `${typeof extensionPrefix}:debugging`
-	| `${typeof extensionPrefix}:disabledToggleCodeLens`
-	| `${typeof extensionPrefix}:disabled`
-	| `${typeof extensionPrefix}:enabled`
-	| `${typeof extensionPrefix}:gk:hasOrganizations`
-	| `${typeof extensionPrefix}:gk:organization:ai:enabled`
-	| `${typeof extensionPrefix}:gk:organization:drafts:byob`
-	| `${typeof extensionPrefix}:gk:organization:drafts:enabled`
-	| `${typeof extensionPrefix}:hasConnectedRemotes`
-	| `${typeof extensionPrefix}:hasRemotes`
-	| `${typeof extensionPrefix}:hasRichRemotes`
-	| `${typeof extensionPrefix}:hasVirtualFolders`
-	| `${typeof extensionPrefix}:prerelease`
-	| `${typeof extensionPrefix}:readonly`
-	| `${typeof extensionPrefix}:untrusted`
-	| `${typeof extensionPrefix}:views:canCompare`
-	| `${typeof extensionPrefix}:views:canCompare:file`
-	| `${typeof extensionPrefix}:views:commits:filtered`
-	| `${typeof extensionPrefix}:views:commits:hideMergeCommits`
-	| `${typeof extensionPrefix}:views:contributors:hideMergeCommits`
-	| `${typeof extensionPrefix}:views:fileHistory:canPin`
-	| `${typeof extensionPrefix}:views:fileHistory:cursorFollowing`
-	| `${typeof extensionPrefix}:views:fileHistory:editorFollowing`
-	| `${typeof extensionPrefix}:views:lineHistory:editorFollowing`
-	| `${typeof extensionPrefix}:views:patchDetails:mode`
-	| `${typeof extensionPrefix}:views:pullRequest:visible`
-	| `${typeof extensionPrefix}:views:repositories:autoRefresh`
-	| `${typeof extensionPrefix}:vsls`
-	| `${typeof extensionPrefix}:plus`
-	| `${typeof extensionPrefix}:plus:disallowedRepos`
-	| `${typeof extensionPrefix}:plus:enabled`
-	| `${typeof extensionPrefix}:plus:required`
-	| `${typeof extensionPrefix}:plus:state`;
+export type ContextKeys = {
+	'gitlens:activeFileStatus': string;
+	'gitlens:annotationStatus': AnnotationStatus | `${AnnotationStatus}+${FileAnnotationType}`;
+	'gitlens:debugging': boolean;
+	'gitlens:disabled': boolean;
+	'gitlens:disabledToggleCodeLens': boolean;
+	'gitlens:enabled': boolean;
+	'gitlens:gk:hasOrganizations': boolean;
+	'gitlens:gk:organization:ai:enabled': boolean;
+	'gitlens:gk:organization:drafts:byob': boolean;
+	'gitlens:gk:organization:drafts:enabled': boolean;
+	'gitlens:hasVirtualFolders': boolean;
+	'gitlens:plus': SubscriptionPlanId;
+	'gitlens:plus:disallowedRepos': string[];
+	'gitlens:plus:enabled': boolean;
+	'gitlens:plus:required': boolean;
+	'gitlens:plus:state': SubscriptionState;
+	'gitlens:prerelease': boolean;
+	'gitlens:readonly': boolean;
+	'gitlens:repos:withRemotes': string[];
+	'gitlens:repos:withHostingIntegrations': string[];
+	'gitlens:repos:withHostingIntegrationsConnected': string[];
+	'gitlens:untrusted': boolean;
+	'gitlens:views:canCompare': boolean;
+	'gitlens:views:canCompare:file': boolean;
+	'gitlens:views:commits:filtered': boolean;
+	'gitlens:views:commits:hideMergeCommits': boolean;
+	'gitlens:views:contributors:hideMergeCommits': boolean;
+	'gitlens:views:fileHistory:canPin': boolean;
+	'gitlens:views:fileHistory:cursorFollowing': boolean;
+	'gitlens:views:fileHistory:editorFollowing': boolean;
+	'gitlens:views:lineHistory:editorFollowing': boolean;
+	'gitlens:views:patchDetails:mode': 'create' | 'view';
+	'gitlens:views:pullRequest:visible': boolean;
+	'gitlens:views:repositories:autoRefresh': boolean;
+	'gitlens:vsls': boolean | 'host' | 'guest';
+} & Record<`gitlens:action:${string}`, number> &
+	Record<`gitlens:key:${Keys}`, boolean> &
+	Record<`gitlens:webview:${WebviewTypes | CustomEditorTypes}:visible`, boolean> &
+	Record<`gitlens:webviewView:${WebviewViewTypes}:visible`, boolean>;
 
 export type CoreCommands =
 	| 'cursorMove'
@@ -878,7 +876,7 @@ export type SupportedAIModels =
 	| 'vscode';
 
 export type SecretKeys =
-	| `gitlens.integration.auth:${string}`
+	| `gitlens.integration.auth:${IntegrationId}|${string}`
 	| `gitlens.${AIProviders}.key`
 	| `gitlens.plus.auth:${Environment}`;
 
@@ -1177,9 +1175,12 @@ export type TelemetryGlobalContext = {
 	'providers.count': number;
 	'providers.ids': string;
 	'repositories.count': number;
-	'repositories.hasConnectedRemotes': boolean;
 	'repositories.hasRemotes': boolean;
 	'repositories.hasRichRemotes': boolean;
+	'repositories.hasConnectedRemotes': boolean;
+	'repositories.withRemotes': number;
+	'repositories.withHostingIntegrations': number;
+	'repositories.withHostingIntegrationsConnected': number;
 	'repositories.remoteProviders': string;
 	'repositories.schemes': string;
 	'repositories.visibility': 'private' | 'public' | 'local' | 'mixed';
@@ -1282,7 +1283,7 @@ export type TelemetryEvents = {
 
 	/** Sent when the user takes an action on a launchpad item */
 	'launchpad/title/action': LaunchpadEventData & {
-		action: 'feedback' | 'open-in-editor' | 'refresh' | 'settings';
+		action: 'feedback' | 'open-on-gkdev' | 'refresh' | 'settings';
 	};
 
 	/** Sent when the user takes an action on a launchpad item */
@@ -1293,6 +1294,7 @@ export type TelemetryEvents = {
 			| 'merge'
 			| 'soft-open'
 			| 'switch'
+			| 'open-worktree'
 			| 'switch-and-code-suggest'
 			| 'show-overview'
 			| 'open-changes'
@@ -1307,11 +1309,12 @@ export type TelemetryEvents = {
 	/** Sent when the user changes launchpad configuration settings */
 	'launchpad/configurationChanged': {
 		'config.launchpad.staleThreshold': number | null;
+		'config.launchpad.ignoredOrganizations': number;
 		'config.launchpad.ignoredRepositories': number;
 		'config.launchpad.indicator.enabled': boolean;
 		'config.launchpad.indicator.openInEditor': boolean;
 		'config.launchpad.indicator.icon': 'default' | 'group';
-		'config.launchpad.indicator.label': false | 'item';
+		'config.launchpad.indicator.label': false | 'item' | 'counts';
 		'config.launchpad.indicator.useColors': boolean;
 		'config.launchpad.indicator.groups': string;
 		'config.launchpad.indicator.polling.enabled': boolean;
@@ -1344,6 +1347,12 @@ export type TelemetryEvents = {
 	'launchpad/indicator/hidden': void;
 	/** Sent when the launchpad indicator loads (with data) for the first time ever for this device */
 	'launchpad/indicator/firstLoad': void;
+	/** Sent when a launchpad operation is taking longer than a set timeout to complete */
+	'launchpad/operation/slow': {
+		timeout: number;
+		operation: 'getMyPullRequests' | 'getCodeSuggestions' | 'getEnrichedItems' | 'getCodeSuggestionCounts';
+		duration: number;
+	};
 
 	/** Sent when a PR review was started in the inspect overview */
 	openReviewMode: {
@@ -1465,13 +1474,19 @@ type LaunchpadEventDataBase = {
 };
 
 type LaunchpadEventData = LaunchpadEventDataBase &
-	Partial<
-		{
-			'items.count': number;
-			'groups.count': number;
-		} & Record<`groups.${LaunchpadGroups}.count`, number> &
-			Record<`groups.${LaunchpadGroups}.collapsed`, boolean | undefined>
-	>;
+	(
+		| Partial<{ 'items.error': string }>
+		| Partial<
+				{
+					'items.count': number;
+					'items.timings.prs': number;
+					'items.timings.codeSuggestionCounts': number;
+					'items.timings.enrichedItems': number;
+					'groups.count': number;
+				} & Record<`groups.${LaunchpadGroups}.count`, number> &
+					Record<`groups.${LaunchpadGroups}.collapsed`, boolean | undefined>
+		  >
+	);
 
 type LaunchpadGroups =
 	| 'current-branch'

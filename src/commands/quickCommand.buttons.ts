@@ -183,7 +183,7 @@ export const SetRemoteAsDefaultQuickInputButton: QuickInputButton = {
 
 export const ShowDetailsViewQuickInputButton: QuickInputButton = {
 	iconPath: new ThemeIcon('eye'),
-	tooltip: 'Open Details',
+	tooltip: 'Inspect Details',
 };
 
 export const OpenChangesViewQuickInputButton: QuickInputButton = {
@@ -194,6 +194,11 @@ export const OpenChangesViewQuickInputButton: QuickInputButton = {
 export const ShowResultsInSideBarQuickInputButton: QuickInputButton = {
 	iconPath: new ThemeIcon('link-external'),
 	tooltip: 'Show Results in Side Bar',
+};
+
+export const OpenWorktreeInNewWindowQuickInputButton: QuickInputButton = {
+	iconPath: new ThemeIcon('empty-window'),
+	tooltip: 'Open Worktree in New Window',
 };
 
 export const ShowTagsToggleQuickInputButton = class extends SelectableQuickInputButton {

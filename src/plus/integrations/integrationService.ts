@@ -12,13 +12,14 @@ import { debug, log } from '../../system/decorators/log';
 import { take } from '../../system/event';
 import { filterMap, flatten } from '../../system/iterable';
 import type { SubscriptionChangeEvent } from '../gk/account/subscriptionService';
-import type { ServerConnection } from '../gk/serverConnection';
+import type { IntegrationAuthenticationService } from './authentication/integrationAuthentication';
 import { supportedCloudIntegrationIds, toIntegrationId } from './authentication/models';
 import type {
 	HostingIntegration,
 	Integration,
 	IntegrationBase,
 	IntegrationKey,
+	IntegrationResult,
 	IntegrationType,
 	IssueIntegration,
 	ResourceDescriptor,
@@ -53,7 +54,7 @@ export class IntegrationService implements Disposable {
 
 	constructor(
 		private readonly container: Container,
-		private readonly connection: ServerConnection,
+		private readonly authenticationService: IntegrationAuthenticationService,
 	) {
 		this._disposable = Disposable.from(
 			configuration.onDidChange(e => {
@@ -125,7 +126,7 @@ export class IntegrationService implements Disposable {
 			query += `&connect=${integrationId}`;
 		}
 
-		await env.openExternal(this.connection.getGkDevUri('settings/integrations', query));
+		await env.openExternal(this.container.getGkDevUri('settings/integrations', query));
 		take(
 			window.onDidChangeWindowState,
 			2,
@@ -225,39 +226,53 @@ export class IntegrationService implements Disposable {
 				case HostingIntegrationId.GitHub:
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/github')
-					).GitHubIntegration(this.container, this.getProvidersApi.bind(this));
+					).GitHubIntegration(this.container, this.authenticationService, this.getProvidersApi.bind(this));
 					break;
 				case SelfHostedIntegrationId.GitHubEnterprise:
 					if (domain == null) throw new Error(`Domain is required for '${id}' integration`);
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/github')
-					).GitHubEnterpriseIntegration(this.container, this.getProvidersApi.bind(this), domain);
+					).GitHubEnterpriseIntegration(
+						this.container,
+						this.authenticationService,
+						this.getProvidersApi.bind(this),
+						domain,
+					);
 					break;
 				case HostingIntegrationId.GitLab:
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/gitlab')
-					).GitLabIntegration(this.container, this.getProvidersApi.bind(this));
+					).GitLabIntegration(this.container, this.authenticationService, this.getProvidersApi.bind(this));
 					break;
 				case SelfHostedIntegrationId.GitLabSelfHosted:
 					if (domain == null) throw new Error(`Domain is required for '${id}' integration`);
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/gitlab')
-					).GitLabSelfHostedIntegration(this.container, this.getProvidersApi.bind(this), domain);
+					).GitLabSelfHostedIntegration(
+						this.container,
+						this.authenticationService,
+						this.getProvidersApi.bind(this),
+						domain,
+					);
 					break;
 				case HostingIntegrationId.Bitbucket:
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/bitbucket')
-					).BitbucketIntegration(this.container, this.getProvidersApi.bind(this));
+					).BitbucketIntegration(this.container, this.authenticationService, this.getProvidersApi.bind(this));
 					break;
 				case HostingIntegrationId.AzureDevOps:
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/azureDevOps')
-					).AzureDevOpsIntegration(this.container, this.getProvidersApi.bind(this));
+					).AzureDevOpsIntegration(
+						this.container,
+						this.authenticationService,
+						this.getProvidersApi.bind(this),
+					);
 					break;
 				case IssueIntegrationId.Jira:
 					integration = new (
 						await import(/* webpackChunkName: "integrations" */ './providers/jira')
-					).JiraIntegration(this.container, this.getProvidersApi.bind(this));
+					).JiraIntegration(this.container, this.authenticationService, this.getProvidersApi.bind(this));
 					break;
 				default:
 					throw new Error(`Integration with '${id}' is not supported`);
@@ -272,10 +287,11 @@ export class IntegrationService implements Disposable {
 	private async getProvidersApi() {
 		if (this._providersApi == null) {
 			const container = this.container;
+			const authenticationService = this.authenticationService;
 			async function load() {
 				return new (
 					await import(/* webpackChunkName: "integrations-api" */ './providers/providersApi')
-				).ProvidersApi(container);
+				).ProvidersApi(container, authenticationService);
 			}
 
 			this._providersApi = load();
@@ -409,7 +425,7 @@ export class IntegrationService implements Disposable {
 	async getMyPullRequests(
 		integrationIds?: HostingIntegrationId[],
 		cancellation?: CancellationToken,
-	): Promise<SearchedPullRequest[] | undefined> {
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>> {
 		const integrations: Map<HostingIntegration, ResourceDescriptor[] | undefined> = new Map();
 		for (const integrationId of integrationIds?.length ? integrationIds : Object.values(HostingIntegrationId)) {
 			const integration = await this.get(integrationId);
@@ -425,8 +441,10 @@ export class IntegrationService implements Disposable {
 	private async getMyPullRequestsCore(
 		integrations: Map<HostingIntegration, ResourceDescriptor[] | undefined>,
 		cancellation?: CancellationToken,
-	): Promise<SearchedPullRequest[] | undefined> {
-		const promises: Promise<SearchedPullRequest[] | undefined>[] = [];
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>> {
+		const start = Date.now();
+
+		const promises: Promise<IntegrationResult<SearchedPullRequest[] | undefined>>[] = [];
 		for (const [integration, repos] of integrations) {
 			if (integration == null) continue;
 
@@ -434,17 +452,43 @@ export class IntegrationService implements Disposable {
 		}
 
 		const results = await Promise.allSettled(promises);
-		return [...flatten(filterMap(results, r => (r.status === 'fulfilled' ? r.value : undefined)))];
+
+		const errors = [
+			...filterMap(results, r =>
+				r.status === 'fulfilled' && r.value?.error != null ? r.value.error : undefined,
+			),
+		];
+		if (errors.length) {
+			return {
+				error: errors.length === 1 ? errors[0] : new AggregateError(errors),
+				duration: Date.now() - start,
+			};
+		}
+
+		return {
+			value: [
+				...flatten(
+					filterMap(results, r =>
+						r.status === 'fulfilled' && r.value != null && r.value?.error == null
+							? r.value.value
+							: undefined,
+					),
+				),
+			],
+			duration: Date.now() - start,
+		};
 	}
 
-	async getMyPullRequestsForRemotes(remote: GitRemote): Promise<SearchedPullRequest[] | undefined>;
-	async getMyPullRequestsForRemotes(remotes: GitRemote[]): Promise<SearchedPullRequest[] | undefined>;
+	async getMyPullRequestsForRemotes(remote: GitRemote): Promise<IntegrationResult<SearchedPullRequest[] | undefined>>;
+	async getMyPullRequestsForRemotes(
+		remotes: GitRemote[],
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>>;
 	@debug<IntegrationService['getMyPullRequestsForRemotes']>({
 		args: { 0: (r: GitRemote | GitRemote[]) => (Array.isArray(r) ? r.map(rp => rp.name) : r.name) },
 	})
 	async getMyPullRequestsForRemotes(
 		remoteOrRemotes: GitRemote | GitRemote[],
-	): Promise<SearchedPullRequest[] | undefined> {
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>> {
 		if (!Array.isArray(remoteOrRemotes)) {
 			remoteOrRemotes = [remoteOrRemotes];
 		}
@@ -482,6 +526,15 @@ export class IntegrationService implements Disposable {
 			return this.getByRemoteCached(remote)?.maybeConnected ?? false;
 		}
 		return false;
+	}
+
+	@log()
+	async reset(): Promise<void> {
+		for (const integration of this._integrations.values()) {
+			await integration.disconnect({ silent: true });
+		}
+
+		await this.authenticationService.reset();
 	}
 
 	supports(remoteId: RemoteProviderId): boolean {

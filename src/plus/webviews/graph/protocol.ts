@@ -68,6 +68,7 @@ export type GraphScrollMarkerTypes =
 	| 'head'
 	| 'highlights'
 	| 'localBranches'
+	| 'pullRequests'
 	| 'remoteBranches'
 	| 'stashes'
 	| 'tags'
@@ -78,6 +79,7 @@ export type GraphMinimapMarkerTypes =
 	| 'head'
 	| 'highlights'
 	| 'localBranches'
+	| 'pullRequests'
 	| 'remoteBranches'
 	| 'stashes'
 	| 'tags'
@@ -179,6 +181,7 @@ export interface GraphComponentConfig {
 	minimap?: boolean;
 	minimapDataType?: Config['graph']['minimap']['dataType'];
 	minimapMarkerTypes?: GraphMinimapMarkerTypes[];
+	onlyFollowFirstParent?: boolean;
 	scrollMarkerTypes?: GraphScrollMarkerTypes[];
 	scrollRowPadding?: number;
 	showGhostRefsOnRowHover?: boolean;
@@ -262,11 +265,6 @@ export interface UpdateColumnsParams {
 }
 export const UpdateColumnsCommand = new IpcCommand<UpdateColumnsParams>(scope, 'columns/update');
 
-export interface UpdateDimMergeCommitsParams {
-	dim: boolean;
-}
-export const UpdateDimMergeCommitsCommand = new IpcCommand<UpdateDimMergeCommitsParams>(scope, 'dimMergeCommits');
-
 export interface UpdateRefsVisibilityParams {
 	refs: GraphExcludedRef[];
 	visible: boolean;
@@ -311,6 +309,16 @@ export interface DidEnsureRowParams {
 	remapped?: string;
 }
 export const EnsureRowRequest = new IpcRequest<EnsureRowParams, DidEnsureRowParams>(scope, 'rows/ensure');
+
+export type GetRowHoverParams = {
+	type: GitGraphRowType;
+	id: string;
+};
+export interface DidGetRowHoverParams {
+	id: string;
+	markdown?: string;
+}
+export const GetRowHoverRequest = new IpcRequest<GetRowHoverParams, DidGetRowHoverParams>(scope, 'row/hover/get');
 
 export interface SearchParams {
 	search?: SearchQuery;

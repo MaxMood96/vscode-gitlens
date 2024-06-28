@@ -1,6 +1,7 @@
 import { EntityIdentifierUtils } from '@gitkraken/provider-apis';
 import type { CancellationToken, ConfigurationChangeEvent, TextDocumentShowOptions } from 'vscode';
 import { CancellationTokenSource, Disposable, env, Uri, window } from 'vscode';
+import { extractDraftMessage } from '../../ai/aiProviderService';
 import type { MaybeEnrichedAutolink } from '../../annotations/autolinks';
 import { serializeAutolink } from '../../annotations/autolinks';
 import { getAvatarUri } from '../../avatars';
@@ -46,7 +47,6 @@ import { getEntityIdentifierInput } from '../../plus/integrations/providers/util
 import { confirmDraftStorage, ensureAccount } from '../../plus/utils';
 import type { ShowInCommitGraphCommandArgs } from '../../plus/webviews/graph/protocol';
 import type { Change } from '../../plus/webviews/patchDetails/protocol';
-import { pauseOnCancelOrTimeoutMapTuplePromise } from '../../system/cancellation';
 import { executeCommand, executeCoreCommand, executeCoreGitCommand, registerCommand } from '../../system/command';
 import { configuration } from '../../system/configuration';
 import { getContext, onDidChangeContext } from '../../system/context';
@@ -57,7 +57,7 @@ import { filterMap, map } from '../../system/iterable';
 import { Logger } from '../../system/logger';
 import { getLogScope } from '../../system/logger.scope';
 import { MRU } from '../../system/mru';
-import { getSettledValue } from '../../system/promise';
+import { getSettledValue, pauseOnCancelOrTimeoutMapTuplePromise } from '../../system/promise';
 import type { Serialized } from '../../system/serialize';
 import { serialize } from '../../system/serialize';
 import type { LinesChangeEvent } from '../../trackers/lineTracker';
@@ -71,6 +71,7 @@ import type {
 	CreatePatchFromWipParams,
 	DidChangeWipStateParams,
 	DidExplainParams,
+	DidGenerateParams,
 	ExecuteFileActionParams,
 	GitBranchShape,
 	Mode,
@@ -95,6 +96,7 @@ import {
 	ExecuteFileActionCommand,
 	ExplainRequest,
 	FetchCommand,
+	GenerateRequest,
 	messageHeadlineSplitterToken,
 	NavigateCommand,
 	OpenFileCommand,
@@ -461,6 +463,10 @@ export class CommitDetailsWebviewProvider
 
 			case ExplainRequest.is(e):
 				void this.explainRequest(ExplainRequest, e);
+				break;
+
+			case GenerateRequest.is(e):
+				void this.generateRequest(GenerateRequest, e);
 				break;
 
 			case StageFileCommand.is(e):
@@ -894,7 +900,7 @@ export class CommitDetailsWebviewProvider
 		};
 	}
 
-	private onContextChanged(key: ContextKeys) {
+	private onContextChanged(key: keyof ContextKeys) {
 		if (['gitlens:gk:organization:ai:enabled', 'gitlens:gk:organization:drafts:enabled'].includes(key)) {
 			this.updatePendingContext({ orgSettings: this.getOrgSettings() });
 			this.updateState();
@@ -903,8 +909,8 @@ export class CommitDetailsWebviewProvider
 
 	private getOrgSettings(): State['orgSettings'] {
 		return {
-			ai: getContext<boolean>('gitlens:gk:organization:ai:enabled', false),
-			drafts: getContext<boolean>('gitlens:gk:organization:drafts:enabled', false),
+			ai: getContext('gitlens:gk:organization:ai:enabled', false),
+			drafts: getContext('gitlens:gk:organization:drafts:enabled', false),
 		};
 	}
 
@@ -1080,6 +1086,40 @@ export class CommitDetailsWebviewProvider
 			if (summary == null) throw new Error('Error retrieving content');
 
 			params = { summary: summary };
+		} catch (ex) {
+			debugger;
+			params = { error: { message: ex.message } };
+		}
+
+		void this.host.respond(requestType, msg, params);
+	}
+
+	private async generateRequest<T extends typeof GenerateRequest>(requestType: T, msg: IpcCallMessageType<T>) {
+		const repo: Repository | undefined = this._context.wip?.repo;
+
+		if (!repo) {
+			void this.host.respond(requestType, msg, { error: { message: 'Unable to find changes' } });
+			return;
+		}
+
+		let params: DidGenerateParams;
+
+		try {
+			// TODO@eamodio HACK -- only works for the first patch
+			// const patch = await this.getDraftPatch(this._context.draft);
+			// if (patch == null) throw new Error('Unable to find patch');
+
+			// const commit = await this.getOrCreateCommitForPatch(patch.gkRepositoryId);
+			// if (commit == null) throw new Error('Unable to find commit');
+
+			const summary = await (
+				await this.container.ai
+			)?.generateDraftMessage(repo, {
+				progress: { location: { viewId: this.host.id } },
+			});
+			if (summary == null) throw new Error('Error retrieving content');
+
+			params = extractDraftMessage(summary);
 		} catch (ex) {
 			debugger;
 			params = { error: { message: ex.message } };
@@ -1266,7 +1306,7 @@ export class CommitDetailsWebviewProvider
 	private async canAccessDrafts(): Promise<boolean> {
 		if ((await this.getHasAccount()) === false) return false;
 
-		return getContext<boolean>('gitlens:gk:organization:drafts:enabled', false);
+		return getContext('gitlens:gk:organization:drafts:enabled', false);
 	}
 
 	private async getCodeSuggestions(pullRequest: PullRequest, repository: Repository): Promise<Draft[]> {
@@ -1416,7 +1456,11 @@ export class CommitDetailsWebviewProvider
 		this.updatePendingContext(
 			{
 				commit: commit,
-				richStateLoaded: Boolean(commit?.isUncommitted) || !getContext('gitlens:hasConnectedRemotes'),
+				richStateLoaded:
+					Boolean(commit?.isUncommitted) ||
+					(commit != null
+						? !getContext('gitlens:repos:withHostingIntegrationsConnected')?.includes(commit.repoPath)
+						: !getContext('gitlens:repos:withHostingIntegrationsConnected')),
 				formattedMessage: undefined,
 				autolinkedIssues: undefined,
 				pullRequest: undefined,

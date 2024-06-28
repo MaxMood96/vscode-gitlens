@@ -8,9 +8,40 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ### Added
 
+- Adds a new `counts` option to the `gitlens.launchpad.indicator.label` setting to show the status counts of items which need your attention in the _Launchpad_ status bar indicator
+- Adds _Search for Commits within Selection_ command to the editor context menu when there is a selection
+- Adds a `gitlens.launchpad.ignoredOrganizations` setting to specify an array of organizations (or users) to ignore in the _Launchpad_
+- Improves the tooltips of stashes in GitLens views
+  - Adds a `gitlens.views.formats.stashes.tooltip` setting to specify the tooltip format of the stashes in GitLens views
+- Improves the display of branch and tag tips in the _File History_ and _Line History_ and in commit tooltips in GitLens views
+  - Adds provider-specific icons to tips of remote branches
+- Adds pull request scroll and minimap markers to the _Commit Graph_
+
+### Changed
+
+- Renames `Reset Stored AI Key` command to `Reset Stored AI Keys...` and adds confirmation prompt with options to reset only the current or all AI keys
+- Renames _Open Inspect_ to _Inspect Commit Details_
+- Renames _Open Line Inspect_ to _Inspect Line Commit Details_
+- Renames _Open Details_ to _Inspect Commit Details_
+- Replaces _Open in Editor_ link in the Launchpad with a link to _gitkraken.dev_
+
+### Fixed
+
+- Fixes [#3344](https://github.com/gitkraken/vscode-gitlens/issues/3344) - Make changing the AI key easier
+- Fixes fixes issue with Jira integration not refreshing
+
+## [15.1.0] - 2024-06-05
+
+### Added
+
 - Adds support for GitHub Copilot and other VS Code extension-provided AI models for GitLens' experimental AI features
   - Adds a `gitlens.ai.experimental.model` setting to specify the AI model to use
   - Adds a `gitlens.ai.experimental.vscode.model` setting to specify the VS Code extension-provided AI model to use when `gitlens.ai.experimental.model` is set to `vscode`
+- Adds new Launchpad improvements:
+  - Collapsed state of Launchpad groups are now saved between uses
+  - The _Draft_ and _Pinned_ categories in the Launchpad now always sort their items by date
+  - The Launchpad and Launchpad status bar indicator now indicate when there is an error loading data
+  - The Launchpad indicator now shows the Launchpad icon next to the loading spinner when the Launchpad is loading
 
 ### Changed
 
@@ -21,6 +52,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 ### Fixed
 
 - Fixes [#3295](https://github.com/gitkraken/vscode-gitlens/issues/3295) - Incorrect pluralization in Authors lens &mdash; thanks to [PR #3296](https://github.com/gitkraken/vscode-gitlens/pull/3296) by bm-w ([@bm-w](https://github.com/bm-w))
+- Fixes [#3277](https://github.com/gitkraken/vscode-gitlens/issues/3277) - Unable to pull branch when the local branch whose name differs from its tracking branch
 
 ## [15.0.4] - 2024-05-20
 
@@ -5400,7 +5432,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 - Initial release but still heavily a work in progress.
 
-[unreleased]: https://github.com/gitkraken/vscode-gitlens/compare/v15.0.4...HEAD
+[unreleased]: https://github.com/gitkraken/vscode-gitlens/compare/v15.1.0...HEAD
+[15.1.0]: https://github.com/gitkraken/vscode-gitlens/compare/v15.0.4...gitkraken:v15.1.0
 [15.0.4]: https://github.com/gitkraken/vscode-gitlens/compare/v15.0.3...gitkraken:v15.0.4
 [15.0.3]: https://github.com/gitkraken/vscode-gitlens/compare/v15.0.2...gitkraken:v15.0.3
 [15.0.2]: https://github.com/gitkraken/vscode-gitlens/compare/v15.0.1...gitkraken:v15.0.2

@@ -87,13 +87,6 @@ author {
 }
 baseRefName
 baseRefOid
-baseRepository {
-	name
-	owner {
-		login
-	}
-	url
-}
 headRefName
 headRefOid
 headRepository {
@@ -112,6 +105,7 @@ repository {
 	owner {
 		login
 	}
+	url
 	viewerPermission
 }
 `;
@@ -126,37 +120,23 @@ assignees(first: 10) {
 	}
 }
 checksUrl
-commits(last: 1) {
-	nodes {
-		commit {
-			oid
-			statusCheckRollup {
-				state
-			}
-		}
-	}
-}
 deletions
 isDraft
-isReadByViewer
-latestReviews (first: 10) {
+mergeable
+mergedBy {
+	login
+}
+reviewDecision
+latestReviews(first: 10) {
 	nodes {
 		author {
 			login
-			avatarUrl
+			avatarUrl(size: $avatarSize)
 			url
 		}
 		state
 	}
 }
-mergeable
-mergedBy {
-	login
-}
-reactions(content: THUMBS_UP) {
-	totalCount
-}
-reviewDecision
 reviewRequests(first: 10) {
 	nodes {
 		asCodeOwner
@@ -164,11 +144,14 @@ reviewRequests(first: 10) {
 		requestedReviewer {
 			... on User {
 				login
-				avatarUrl
+				avatarUrl(size: $avatarSize)
 				url
 			}
 		}
 	}
+}
+statusCheckRollup {
+	state
 }
 totalCommentsCount
 viewerCanUpdate
@@ -180,7 +163,7 @@ assignees(first: 100) {
 	nodes {
 		login
 		url
-		avatarUrl
+		avatarUrl(size: $avatarSize)
 	}
 }
 author {
@@ -2728,6 +2711,12 @@ export class GitHubApi implements Disposable {
 	): Promise<SearchedPullRequest[]> {
 		const scope = getLogScope();
 
+		if (configuration.get('launchpad.experimental.queryUseInvolvesFilter') ?? false) {
+			return this.searchMyInvolvedPullRequests(provider, token, options, cancellation);
+		}
+
+		const limit = Math.min(100, configuration.get('launchpad.experimental.queryLimit') ?? 100);
+
 		interface SearchResult {
 			authored: {
 				nodes: GitHubPullRequest[];
@@ -2751,28 +2740,28 @@ export class GitHubApi implements Disposable {
 	$mentioned: String!
 	$avatarSize: Int
 ) {
-	authored: search(first: 100, query: $authored, type: ISSUE) {
+	authored: search(first: ${limit}, query: $authored, type: ISSUE) {
 		nodes {
 			...on PullRequest {
 				${gqlPullRequestFragment}
 			}
 		}
 	}
-	assigned: search(first: 100, query: $assigned, type: ISSUE) {
+	assigned: search(first: ${limit}, query: $assigned, type: ISSUE) {
 		nodes {
 			...on PullRequest {
 				${gqlPullRequestFragment}
 			}
 		}
 	}
-	reviewRequested: search(first: 100, query: $reviewRequested, type: ISSUE) {
+	reviewRequested: search(first: ${limit}, query: $reviewRequested, type: ISSUE) {
 		nodes {
 			...on PullRequest {
 				${gqlPullRequestFragment}
 			}
 		}
 	}
-	mentioned: search(first: 100, query: $mentioned, type: ISSUE) {
+	mentioned: search(first: ${limit}, query: $mentioned, type: ISSUE) {
 		nodes {
 			...on PullRequest {
 				${gqlPullRequestFragment}
@@ -2832,11 +2821,116 @@ export class GitHubApi implements Disposable {
 		}
 	}
 
+	@debug<GitHubApi['searchMyInvolvedPullRequests']>({ args: { 0: p => p.name, 1: '<token>' } })
+	private async searchMyInvolvedPullRequests(
+		provider: Provider,
+		token: string,
+		options?: { search?: string; user?: string; repos?: string[]; baseUrl?: string; avatarSize?: number },
+		cancellation?: CancellationToken,
+	): Promise<SearchedPullRequest[]> {
+		const scope = getLogScope();
+
+		const limit = Math.min(100, configuration.get('launchpad.experimental.queryLimit') ?? 100);
+
+		try {
+			interface SearchResult {
+				search: {
+					issueCount: number;
+					nodes: GitHubPullRequest[];
+				};
+				viewer: {
+					login: string;
+				};
+			}
+
+			const query = `query searchMyPullRequests(
+	$search: String!
+	$avatarSize: Int
+) {
+	search(first: ${limit}, query: $search, type: ISSUE) {
+		issueCount
+		nodes {
+			...on PullRequest {
+				${gqlPullRequestFragment}
+			}
+		}
+	}
+	viewer {
+		login
+	}
+}`;
+
+			let search = options?.search?.trim() ?? '';
+
+			if (options?.user) {
+				search += ` user:${options.user}`;
+			}
+
+			if (options?.repos?.length) {
+				search += ` repo:${options.repos.join(' repo:')}`;
+			}
+
+			// Hack for now, ultimately this should be passed in
+			const ignoredRepos = configuration.get('launchpad.ignoredRepositories') ?? [];
+			if (ignoredRepos.length) {
+				search += ` -repo:${ignoredRepos.join(' -repo:')}`;
+			}
+
+			// Hack for now, ultimately this should be passed in
+			const ignoredOrgs = configuration.get('launchpad.ignoredOrganizations') ?? [];
+			if (ignoredOrgs.length) {
+				search += ` -org:${ignoredOrgs.join(' -org:')}`;
+			}
+
+			const rsp = await this.graphql<SearchResult>(
+				provider,
+				token,
+				query,
+				{
+					search: `is:open is:pr involves:@me archived:false ${search}`.trim(),
+					baseUrl: options?.baseUrl,
+					avatarSize: options?.avatarSize,
+				},
+				scope,
+				cancellation,
+			);
+			if (rsp == null) return [];
+
+			const viewer = rsp.viewer.login;
+
+			function toQueryResult(pr: GitHubPullRequest): SearchedPullRequest {
+				const reasons = [];
+				if (pr.author.login === viewer) {
+					reasons.push('authored');
+				}
+				if (pr.assignees.nodes.some(a => a.login === viewer)) {
+					reasons.push('assigned');
+				}
+				if (pr.reviewRequests.nodes.some(r => r.requestedReviewer?.login === viewer)) {
+					reasons.push('review-requested');
+				}
+				if (reasons.length === 0) {
+					reasons.push('mentioned');
+				}
+
+				return {
+					pullRequest: fromGitHubPullRequest(pr, provider),
+					reasons: reasons,
+				};
+			}
+
+			const results: SearchedPullRequest[] = rsp.search.nodes.map(pr => toQueryResult(pr));
+			return results;
+		} catch (ex) {
+			throw this.handleException(ex, provider, scope);
+		}
+	}
+
 	@debug<GitHubApi['searchMyIssues']>({ args: { 0: p => p.name, 1: '<token>' } })
 	async searchMyIssues(
 		provider: Provider,
 		token: string,
-		options?: { search?: string; user?: string; repos?: string[]; baseUrl?: string },
+		options?: { search?: string; user?: string; repos?: string[]; baseUrl?: string; avatarSize?: number },
 		cancellation?: CancellationToken,
 	): Promise<SearchedIssue[] | undefined> {
 		const scope = getLogScope();
@@ -2857,6 +2951,7 @@ export class GitHubApi implements Disposable {
 				$authored: String!
 				$assigned: String!
 				$mentioned: String!
+				$avatarSize: Int
 			) {
 				authored: search(first: 100, query: $authored, type: ISSUE) {
 					nodes {
@@ -2903,6 +2998,7 @@ export class GitHubApi implements Disposable {
 					assigned: `${search} ${baseFilters} assignee:@me`.trim(),
 					mentioned: `${search} ${baseFilters} mentions:@me`.trim(),
 					baseUrl: options?.baseUrl,
+					avatarSize: options?.avatarSize,
 				},
 				scope,
 				cancellation,

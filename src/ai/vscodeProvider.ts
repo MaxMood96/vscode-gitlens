@@ -5,6 +5,7 @@ import { configuration } from '../system/configuration';
 import { capitalize } from '../system/string';
 import type { AIModel, AIProvider } from './aiProviderService';
 import { getMaxCharacters } from './aiProviderService';
+import { cloudPatchMessageSystemPrompt, codeSuggestMessageSystemPrompt, commitMessageSystemPrompt } from './prompts';
 
 const provider = { id: 'vscode', name: 'VS Code Provided' } as const;
 
@@ -36,9 +37,14 @@ export class VSCodeAIProvider implements AIProvider<typeof provider.id> {
 		return models?.[0];
 	}
 
-	async generateCommitMessage(
+	async generateMessage(
 		model: VSCodeAIModel,
 		diff: string,
+		promptConfig: {
+			systemPrompt: string;
+			customPrompt: string;
+			contextName: string;
+		},
 		options?: { cancellation?: CancellationToken; context?: string },
 	): Promise<string | undefined> {
 		const chatModel = await this.getChatModel(model);
@@ -53,92 +59,132 @@ export class VSCodeAIProvider implements AIProvider<typeof provider.id> {
 			cancellation = options.cancellation;
 		}
 
-		// let retries = 0;
-		const maxCodeCharacters = getMaxCharacters(model, 2600); // TODO: Use chatModel.countTokens
-		while (true) {
-			const code = diff.substring(0, maxCodeCharacters);
+		let retries = 0;
+		let maxCodeCharacters = getMaxCharacters(model, 2600) - 1000; // TODO: Use chatModel.countTokens
 
-			let customPrompt = configuration.get('experimental.generateCommitMessagePrompt');
-			if (!customPrompt.endsWith('.')) {
-				customPrompt += '.';
-			}
+		try {
+			while (true) {
+				const code = diff.substring(0, maxCodeCharacters);
 
-			const messages: LanguageModelChatMessage[] = [
-				LanguageModelChatMessage.User(`You are an advanced AI programming assistant tasked with summarizing code changes into a concise and meaningful commit message. Compose a commit message that:
-- Strictly synthesizes meaningful information from the provided code diff
-- Utilizes any additional user-provided context to comprehend the rationale behind the code changes
-- Is clear and brief, with an informal yet professional tone, and without superfluous descriptions
-- Avoids unnecessary phrases such as "this commit", "this change", and the like
-- Avoids direct mention of specific code identifiers, names, or file names, unless they are crucial for understanding the purpose of the changes
-- Most importantly emphasizes the 'why' of the change, its benefits, or the problem it addresses rather than only the 'what' that changed
+				const messages: LanguageModelChatMessage[] = [
+					LanguageModelChatMessage.User(promptConfig.systemPrompt),
+					LanguageModelChatMessage.User(
+						`Here is the code diff to use to generate the ${promptConfig.contextName}:\n\n${code}`,
+					),
+					...(options?.context
+						? [
+								LanguageModelChatMessage.User(
+									`Here is additional context which should be taken into account when generating the ${promptConfig.contextName}:\n\n${options.context}`,
+								),
+						  ]
+						: []),
+					LanguageModelChatMessage.User(promptConfig.customPrompt),
+				];
 
-Follow the user's instructions carefully, don't repeat yourself, don't include the code in the output, or make anything up!`),
-				LanguageModelChatMessage.User(
-					`Here is the code diff to use to generate the commit message:\n\n${code}`,
-				),
-				...(options?.context
-					? [
-							LanguageModelChatMessage.User(
-								`Here is additional context which should be taken into account when generating the commit message:\n\n${options.context}`,
-							),
-					  ]
-					: []),
-				LanguageModelChatMessage.User(customPrompt),
-			];
+				try {
+					const rsp = await chatModel.sendRequest(messages, {}, cancellation);
 
-			try {
-				const rsp = await chatModel.sendRequest(messages, {}, cancellation);
-				// if (!rsp.ok) {
-				// 	if (rsp.status === 404) {
-				// 		throw new Error(
-				// 			`Unable to generate commit message: Your API key doesn't seem to have access to the selected '${model}' model`,
-				// 		);
-				// 	}
-				// 	if (rsp.status === 429) {
-				// 		throw new Error(
-				// 			`Unable to generate commit message: (${this.name}:${rsp.status}) Too many requests (rate limit exceeded) or your API key is associated with an expired trial`,
-				// 		);
-				// 	}
+					if (diff.length > maxCodeCharacters) {
+						void window.showWarningMessage(
+							`The diff of the changes had to be truncated to ${maxCodeCharacters} characters to fit within ${getPossessiveForm(
+								model.provider.name,
+							)} limits.`,
+						);
+					}
 
-				// 	let json;
-				// 	try {
-				// 		json = (await rsp.json()) as { error?: { code: string; message: string } } | undefined;
-				// 	} catch {}
+					let message = '';
+					for await (const fragment of rsp.text) {
+						message += fragment;
+					}
 
-				// 	debugger;
+					return message.trim();
+				} catch (ex) {
+					debugger;
 
-				// 	if (retries++ < 2 && json?.error?.code === 'context_length_exceeded') {
-				// 		maxCodeCharacters -= 500 * retries;
-				// 		continue;
-				// 	}
+					let message = ex instanceof Error ? ex.message : String(ex);
 
-				// 	throw new Error(
-				// 		`Unable to generate commit message: (${this.name}:${rsp.status}) ${
-				// 			json?.error?.message || rsp.statusText
-				// 		}`,
-				// 	);
-				// }
+					if (ex instanceof Error && 'cause' in ex && ex.cause instanceof Error) {
+						message += `\n${ex.cause.message}`;
 
-				if (diff.length > maxCodeCharacters) {
-					void window.showWarningMessage(
-						`The diff of the changes had to be truncated to ${maxCodeCharacters} characters to fit within ${getPossessiveForm(
-							model.provider.name,
-						)} limits.`,
+						if (retries++ < 2 && ex.cause.message.includes('exceeds token limit')) {
+							maxCodeCharacters -= 500 * retries;
+							continue;
+						}
+					}
+
+					throw new Error(
+						`Unable to generate commit message: (${getPossessiveForm(model.provider.name)}:${
+							ex.code
+						}) ${message}`,
 					);
 				}
-
-				let message = '';
-				for await (const fragment of rsp.text) {
-					message += fragment;
-				}
-
-				return message.trim();
-			} catch (ex) {
-				debugger;
-			} finally {
-				cancellationSource?.dispose();
 			}
+		} finally {
+			cancellationSource?.dispose();
 		}
+	}
+
+	async generateDraftMessage(
+		model: VSCodeAIModel,
+		diff: string,
+		options?: {
+			cancellation?: CancellationToken | undefined;
+			context?: string | undefined;
+			codeSuggestion?: boolean | undefined;
+		},
+	): Promise<string | undefined> {
+		let customPrompt =
+			options?.codeSuggestion === true
+				? configuration.get('experimental.generateCodeSuggestionMessagePrompt')
+				: configuration.get('experimental.generateCloudPatchMessagePrompt');
+		if (!customPrompt.endsWith('.')) {
+			customPrompt += '.';
+		}
+
+		return this.generateMessage(
+			model,
+			diff,
+			{
+				systemPrompt:
+					options?.codeSuggestion === true ? codeSuggestMessageSystemPrompt : cloudPatchMessageSystemPrompt,
+				customPrompt: customPrompt,
+				contextName:
+					options?.codeSuggestion === true
+						? 'code suggestion title and description'
+						: 'cloud patch title and description',
+			},
+			options != null
+				? {
+						cancellation: options.cancellation,
+						context: options.context,
+				  }
+				: undefined,
+		);
+	}
+
+	async generateCommitMessage(
+		model: VSCodeAIModel,
+		diff: string,
+		options?: {
+			cancellation?: CancellationToken | undefined;
+			context?: string | undefined;
+		},
+	): Promise<string | undefined> {
+		let customPrompt = configuration.get('experimental.generateCommitMessagePrompt');
+		if (!customPrompt.endsWith('.')) {
+			customPrompt += '.';
+		}
+
+		return this.generateMessage(
+			model,
+			diff,
+			{
+				systemPrompt: commitMessageSystemPrompt,
+				customPrompt: customPrompt,
+				contextName: 'commit message',
+			},
+			options,
+		);
 	}
 
 	async explainChanges(
@@ -159,79 +205,68 @@ Follow the user's instructions carefully, don't repeat yourself, don't include t
 			cancellation = options.cancellation;
 		}
 
-		// let retries = 0;
-		const maxCodeCharacters = getMaxCharacters(model, 3000);
-		while (true) {
-			const code = diff.substring(0, maxCodeCharacters);
+		let retries = 0;
+		let maxCodeCharacters = getMaxCharacters(model, 3000) - 1000;
 
-			const messages: LanguageModelChatMessage[] = [
-				LanguageModelChatMessage.User(`You are an advanced AI programming assistant tasked with summarizing code changes into an explanation that is both easy to understand and meaningful. Construct an explanation that:
+		try {
+			while (true) {
+				const code = diff.substring(0, maxCodeCharacters);
+
+				const messages: LanguageModelChatMessage[] = [
+					LanguageModelChatMessage.User(`You are an advanced AI programming assistant tasked with summarizing code changes into an explanation that is both easy to understand and meaningful. Construct an explanation that:
 - Concisely synthesizes meaningful information from the provided code diff
 - Incorporates any additional context provided by the user to understand the rationale behind the code changes
 - Places the emphasis on the 'why' of the change, clarifying its benefits or addressing the problem that necessitated the change, beyond just detailing the 'what' has changed
 
 Do not make any assumptions or invent details that are not supported by the code diff or the user-provided context.`),
-				LanguageModelChatMessage.User(
-					`Here is additional context provided by the author of the changes, which should provide some explanation to why these changes where made. Please strongly consider this information when generating your explanation:\n\n${message}`,
-				),
-				LanguageModelChatMessage.User(
-					`Now, kindly explain the following code diff in a way that would be clear to someone reviewing or trying to understand these changes:\n\n${code}`,
-				),
-				LanguageModelChatMessage.User(
-					'Remember to frame your explanation in a way that is suitable for a reviewer to quickly grasp the essence of the changes, the issues they resolve, and their implications on the codebase.',
-				),
-			];
+					LanguageModelChatMessage.User(
+						`Here is additional context provided by the author of the changes, which should provide some explanation to why these changes where made. Please strongly consider this information when generating your explanation:\n\n${message}`,
+					),
+					LanguageModelChatMessage.User(
+						`Now, kindly explain the following code diff in a way that would be clear to someone reviewing or trying to understand these changes:\n\n${code}`,
+					),
+					LanguageModelChatMessage.User(
+						'Remember to frame your explanation in a way that is suitable for a reviewer to quickly grasp the essence of the changes, the issues they resolve, and their implications on the codebase.',
+					),
+				];
 
-			try {
-				const rsp = await chatModel.sendRequest(messages, {}, cancellation);
-				// if (!rsp.ok) {
-				// 	if (rsp.status === 404) {
-				// 		throw new Error(
-				// 			`Unable to explain commit: Your API key doesn't seem to have access to the selected '${model}' model`,
-				// 		);
-				// 	}
-				// 	if (rsp.status === 429) {
-				// 		throw new Error(
-				// 			`Unable to explain commit: (${this.name}:${rsp.status}) Too many requests (rate limit exceeded) or your API key is associated with an expired trial`,
-				// 		);
-				// 	}
+				try {
+					const rsp = await chatModel.sendRequest(messages, {}, cancellation);
 
-				// 	let json;
-				// 	try {
-				// 		json = (await rsp.json()) as { error?: { code: string; message: string } } | undefined;
-				// 	} catch {}
+					if (diff.length > maxCodeCharacters) {
+						void window.showWarningMessage(
+							`The diff of the changes had to be truncated to ${maxCodeCharacters} characters to fit within ${getPossessiveForm(
+								model.provider.name,
+							)} limits.`,
+						);
+					}
 
-				// 	debugger;
+					let summary = '';
+					for await (const fragment of rsp.text) {
+						summary += fragment;
+					}
 
-				// 	if (retries++ < 2 && json?.error?.code === 'context_length_exceeded') {
-				// 		maxCodeCharacters -= 500 * retries;
-				// 		continue;
-				// 	}
+					return summary.trim();
+				} catch (ex) {
+					debugger;
+					let message = ex instanceof Error ? ex.message : String(ex);
 
-				// 	throw new Error(
-				// 		`Unable to explain commit: (${this.name}:${rsp.status}) ${json?.error?.message || rsp.statusText}`,
-				// 	);
-				// }
+					if (ex instanceof Error && 'cause' in ex && ex.cause instanceof Error) {
+						message += `\n${ex.cause.message}`;
 
-				if (diff.length > maxCodeCharacters) {
-					void window.showWarningMessage(
-						`The diff of the changes had to be truncated to ${maxCodeCharacters} characters to fit within ${getPossessiveForm(
-							model.provider.name,
-						)} limits.`,
+						if (retries++ < 2 && ex.cause.message.includes('exceeds token limit')) {
+							maxCodeCharacters -= 500 * retries;
+							continue;
+						}
+					}
+
+					throw new Error(
+						`Unable to explain changes: (${getPossessiveForm(model.provider.name)}:${ex.code}) ${message}`,
 					);
 				}
-
-				let summary = '';
-				for await (const fragment of rsp.text) {
-					summary += fragment;
-				}
-
-				return summary.trim();
-			} catch (ex) {
-				debugger;
-			} finally {
-				cancellationSource?.dispose();
 			}
+		} finally {
+			cancellationSource?.dispose();
 		}
 	}
 }

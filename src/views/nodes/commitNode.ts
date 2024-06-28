@@ -11,12 +11,11 @@ import type { GitRevisionReference } from '../../git/models/reference';
 import type { GitRemote } from '../../git/models/remote';
 import type { RemoteProvider } from '../../git/remotes/remoteProvider';
 import { makeHierarchical } from '../../system/array';
-import { pauseOnCancelOrTimeoutMapTuplePromise } from '../../system/cancellation';
 import { configuration } from '../../system/configuration';
 import { getContext } from '../../system/context';
 import { joinPaths, normalizePath } from '../../system/path';
 import type { Deferred } from '../../system/promise';
-import { defer, getSettledValue } from '../../system/promise';
+import { defer, getSettledValue, pauseOnCancelOrTimeoutMapTuplePromise } from '../../system/promise';
 import { sortCompare } from '../../system/string';
 import type { FileHistoryView } from '../fileHistoryView';
 import type { ViewsWithCommits } from '../viewBase';
@@ -93,9 +92,9 @@ export class CommitNode extends ViewRefNode<'commit', ViewsWithCommits | FileHis
 			if (
 				this.view.type !== 'tags' &&
 				!this.unpublished &&
-				getContext('gitlens:hasConnectedRemotes') &&
 				this.view.config.pullRequests?.enabled &&
-				this.view.config.pullRequests?.showForCommits
+				this.view.config.pullRequests?.showForCommits &&
+				getContext('gitlens:repos:withHostingIntegrationsConnected')?.includes(commit.repoPath)
 			) {
 				pullRequest = this.getState('pullRequest');
 				if (pullRequest === undefined && this.getState('pendingPullRequest') === undefined) {

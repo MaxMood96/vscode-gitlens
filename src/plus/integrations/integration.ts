@@ -24,6 +24,7 @@ import type { LogScope } from '../../system/logger.scope';
 import { getLogScope } from '../../system/logger.scope';
 import type {
 	IntegrationAuthenticationProviderDescriptor,
+	IntegrationAuthenticationService,
 	IntegrationAuthenticationSessionDescriptor,
 } from './authentication/integrationAuthentication';
 import type { ProviderAuthenticationSession } from './authentication/models';
@@ -43,6 +44,11 @@ import type {
 } from './providers/models';
 import { HostingIntegrationId, IssueFilter, PagingMode, PullRequestFilter } from './providers/models';
 import type { ProvidersApi } from './providers/providersApi';
+
+export type IntegrationResult<T> =
+	| { value: T; duration?: number; error?: never }
+	| { error: Error; duration?: number; value?: never }
+	| undefined;
 
 export type SupportedIntegrationIds = IntegrationId;
 export type SupportedHostingIntegrationIds = HostingIntegrationId;
@@ -83,6 +89,7 @@ export abstract class IntegrationBase<
 
 	constructor(
 		protected readonly container: Container,
+		protected readonly authenticationService: IntegrationAuthenticationService,
 		protected readonly getProvidersApi: () => Promise<ProvidersApi>,
 	) {}
 
@@ -120,7 +127,7 @@ export abstract class IntegrationBase<
 	}
 
 	protected _session: ProviderAuthenticationSession | null | undefined;
-	protected session() {
+	getSession() {
 		if (this._session === undefined) {
 			return this.ensureSession(false);
 		}
@@ -146,40 +153,38 @@ export abstract class IntegrationBase<
 
 		const connected = this._session != null;
 
-		if (connected && !options?.silent) {
-			if (options?.currentSessionOnly) {
-				void showIntegrationDisconnectedTooManyFailedRequestsWarningMessage(this.name);
+		let signOut = !options?.currentSessionOnly;
+
+		if (connected && !options?.currentSessionOnly && !options?.silent) {
+			const disable = { title: 'Disable' };
+			const disableAndSignOut = { title: 'Disable & Sign Out' };
+			const cancel = { title: 'Cancel', isCloseAffordance: true };
+
+			let result: MessageItem | undefined;
+			if (this.authenticationService.supports(this.authProvider.id)) {
+				result = await window.showWarningMessage(
+					`Are you sure you want to disable the rich integration with ${this.name}?\n\nNote: signing out clears the saved authentication.`,
+					{ modal: true },
+					disable,
+					disableAndSignOut,
+					cancel,
+				);
 			} else {
-				const disable = { title: 'Disable' };
-				const signout = { title: 'Disable & Sign Out' };
-				const cancel = { title: 'Cancel', isCloseAffordance: true };
-
-				let result: MessageItem | undefined;
-				if (this.container.integrationAuthentication.supports(this.authProvider.id)) {
-					result = await window.showWarningMessage(
-						`Are you sure you want to disable the rich integration with ${this.name}?\n\nNote: signing out clears the saved authentication.`,
-						{ modal: true },
-						disable,
-						signout,
-						cancel,
-					);
-				} else {
-					result = await window.showWarningMessage(
-						`Are you sure you want to disable the rich integration with ${this.name}?`,
-						{ modal: true },
-						disable,
-						cancel,
-					);
-				}
-
-				if (result == null || result === cancel) return;
-				if (result === signout) {
-					void this.container.integrationAuthentication.deleteSession(
-						this.authProvider.id,
-						this.authProviderDescriptor,
-					);
-				}
+				result = await window.showWarningMessage(
+					`Are you sure you want to disable the rich integration with ${this.name}?`,
+					{ modal: true },
+					disable,
+					cancel,
+				);
 			}
+
+			if (result == null || result === cancel) return;
+
+			signOut = result === disableAndSignOut;
+		}
+
+		if (signOut) {
+			void this.authenticationService.deleteSession(this.authProvider.id, this.authProviderDescriptor);
 		}
 
 		this.resetRequestExceptionCount();
@@ -236,6 +241,7 @@ export abstract class IntegrationBase<
 		this.requestExceptionCount++;
 
 		if (this.requestExceptionCount >= 5 && this._session !== null) {
+			void showIntegrationDisconnectedTooManyFailedRequestsWarningMessage(this.name);
 			void this.disconnect({ currentSessionOnly: true });
 		}
 	}
@@ -243,7 +249,7 @@ export abstract class IntegrationBase<
 	@gate()
 	@debug({ exit: true })
 	async isConnected(): Promise<boolean> {
-		return (await this.session()) != null;
+		return (await this.getSession()) != null;
 	}
 
 	@gate()
@@ -262,11 +268,10 @@ export abstract class IntegrationBase<
 
 		let session: ProviderAuthenticationSession | undefined | null;
 		try {
-			session = await this.container.integrationAuthentication.getSession(
-				this.authProvider.id,
-				this.authProviderDescriptor,
-				{ createIfNeeded: createIfNeeded, forceNewSession: forceNewSession },
-			);
+			session = await this.authenticationService.getSession(this.authProvider.id, this.authProviderDescriptor, {
+				createIfNeeded: createIfNeeded,
+				forceNewSession: forceNewSession,
+			});
 		} catch (ex) {
 			await this.container.storage.deleteWorkspace(this.connectedKey);
 
@@ -1129,30 +1134,34 @@ export abstract class HostingIntegration<
 		}
 	}
 
-	async searchMyPullRequests(repo?: T, cancellation?: CancellationToken): Promise<SearchedPullRequest[] | undefined>;
+	async searchMyPullRequests(
+		repo?: T,
+		cancellation?: CancellationToken,
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>>;
 	async searchMyPullRequests(
 		repos?: T[],
 		cancellation?: CancellationToken,
-	): Promise<SearchedPullRequest[] | undefined>;
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>>;
 	@debug()
 	async searchMyPullRequests(
 		repos?: T | T[],
 		cancellation?: CancellationToken,
-	): Promise<SearchedPullRequest[] | undefined> {
+	): Promise<IntegrationResult<SearchedPullRequest[] | undefined>> {
 		const scope = getLogScope();
 		const connected = this.maybeConnected ?? (await this.isConnected());
 		if (!connected) return undefined;
 
+		const start = Date.now();
 		try {
 			const pullRequests = await this.searchProviderMyPullRequests(
 				this._session!,
 				repos != null ? (Array.isArray(repos) ? repos : [repos]) : undefined,
 				cancellation,
 			);
-			this.resetRequestExceptionCount();
-			return pullRequests;
+			return { value: pullRequests, duration: Date.now() - start };
 		} catch (ex) {
-			return this.handleProviderException<SearchedPullRequest[] | undefined>(ex, scope, undefined);
+			Logger.error(ex, scope);
+			return { error: ex, duration: Date.now() - start };
 		}
 	}
 

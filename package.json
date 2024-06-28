@@ -2,7 +2,7 @@
 	"name": "gitlens",
 	"displayName": "GitLens — Git supercharged",
 	"description": "Supercharge Git within VS Code — Visualize code authorship at a glance via Git blame annotations and CodeLens, seamlessly navigate and explore Git repositories, gain valuable insights via rich visualizations and powerful comparison commands, and so much more",
-	"version": "15.0.4",
+	"version": "15.1.0",
 	"engines": {
 		"vscode": "^1.82.0"
 	},
@@ -650,7 +650,7 @@
 					},
 					"gitlens.views.formats.commits.tooltip": {
 						"type": "string",
-						"default": "${link}${' via 'pullRequest}${'&nbsp;&nbsp;•&nbsp;&nbsp;'changesDetail}${'&nbsp;&nbsp;&nbsp;&nbsp;'tips}\n\n${avatar} &nbsp;__${author}__, ${ago} &nbsp; _(${date})_ \n\n${message}${\n\n---\n\nfootnotes}",
+						"default": "${link}${'&nbsp;&nbsp;•&nbsp;&nbsp;'changesDetail}${'&nbsp;&nbsp;&nbsp;&nbsp;'tips} \\\n${avatar} &nbsp;__${author}__, ${ago}${' via 'pullRequest} &nbsp; _(${date})_ \n\n${message}${\n\n---\n\nfootnotes}",
 						"markdownDescription": "Specifies the tooltip format (in markdown) of commits in the views. See [_Commit Tokens_](https://github.com/eamodio/vscode-gitlens/wiki/Custom-Formatting#commit-tokens) in the GitLens docs",
 						"scope": "window",
 						"order": 32
@@ -689,6 +689,13 @@
 						"markdownDescription": "Specifies the description format of stashes in the views. See [_Commit Tokens_](https://github.com/gitkraken/vscode-gitlens/wiki/Custom-Formatting#commit-tokens) in the GitLens docs",
 						"scope": "window",
 						"order": 51
+					},
+					"gitlens.views.formats.stashes.tooltip": {
+						"type": "string",
+						"default": "${link}${' on `'stashOnRef`}${'&nbsp;&nbsp;•&nbsp;&nbsp;'changesDetail} \\\n&nbsp;&nbsp;${ago} &nbsp; _(${date})_ \n\n${message}${\n\n---\n\nfootnotes}",
+						"markdownDescription": "Specifies the tooltip format (in markdown) of stashes in the views. See [_Commit Tokens_](https://github.com/eamodio/vscode-gitlens/wiki/Custom-Formatting#commit-tokens) in the GitLens docs",
+						"scope": "window",
+						"order": 52
 					},
 					"gitlens.views.openChangesInMultiDiffEditor": {
 						"type": "boolean",
@@ -2824,6 +2831,12 @@
 						"scope": "window",
 						"order": 30
 					},
+					"gitlens.graph.onlyFollowFirstParent": {
+						"type": "boolean",
+						"default": false,
+						"markdownDescription": "Specifies whether to only follow the first parent when showing commits on the _Commit Graph_",
+						"order": 31
+					},
 					"gitlens.graph.dateStyle": {
 						"type": [
 							"string",
@@ -2955,6 +2968,16 @@
 						"scope": "window",
 						"order": 10
 					},
+					"gitlens.launchpad.ignoredOrganizations": {
+						"type": "array",
+						"default": [],
+						"items": {
+							"type": "string"
+						},
+						"markdownDescription": "Specifies the organizations to ignore in the _Launchpad_",
+						"scope": "window",
+						"order": 11
+					},
 					"gitlens.launchpad.staleThreshold": {
 						"type": [
 							"number",
@@ -2978,6 +3001,10 @@
 							"default",
 							"group"
 						],
+						"enumDescriptions": [
+							"Shows the Launchpad icon",
+							"Shows the icon of the highest priority group"
+						],
 						"default": "default",
 						"markdownDescription": "Specifies the style of the  _Launchpad_ status bar indicator icon",
 						"scope": "window",
@@ -2990,7 +3017,13 @@
 						],
 						"enum": [
 							false,
-							"item"
+							"item",
+							"counts"
+						],
+						"enumDescriptions": [
+							"Hides the label",
+							"Shows the highest priority item which needs your attention",
+							"Shows the status counts of items which need your attention"
 						],
 						"default": "item",
 						"markdownDescription": "Specifies the display of the  _Launchpad_ status bar indicator label",
@@ -3060,6 +3093,20 @@
 						"markdownDescription": "Specifies whether to allow opening multiple instances of the _Launchpad_ as an editor tab",
 						"scope": "window",
 						"order": 1000
+					},
+					"gitlens.launchpad.experimental.queryLimit": {
+						"type": "number",
+						"default": 100,
+						"markdownDescription": "Specifies an experimental limit on the number of pull requests to be queried in the _Launchpad_",
+						"scope": "window",
+						"order": 1100
+					},
+					"gitlens.launchpad.experimental.queryUseInvolvesFilter": {
+						"type": "boolean",
+						"default": true,
+						"markdownDescription": "Specifies an experimental flag whether to use the `involves` filter in the GraphQL query for _Launchpad_",
+						"scope": "window",
+						"order": 1110
 					}
 				}
 			},
@@ -3518,9 +3565,23 @@
 					"gitlens.experimental.generateCommitMessagePrompt": {
 						"type": "string",
 						"default": "Now, please generate a commit message. Ensure that it includes a precise and informative subject line that succinctly summarizes the crux of the changes in under 50 characters. If necessary, follow with an explanatory body providing insight into the nature of the changes, the reasoning behind them, and any significant consequences or considerations arising from them. Conclude with any relevant issue references at the end of the message.",
-						"markdownDescription": "Specifies the prompt to use to tell OpenAI how to structure or format the generated commit message",
+						"markdownDescription": "Specifies the prompt to use to tell the AI provider how to structure or format the generated commit message",
 						"scope": "window",
 						"order": 2
+					},
+					"gitlens.experimental.generateCloudPatchMessagePrompt": {
+						"type": "string",
+						"default": "Now, please generate a title and optional description. Ensure that it includes a precise and informative subject line that succinctly summarizes the crux of the changes in under 50 characters. If necessary, follow with an explanatory body providing insight into the nature of the changes, the reasoning behind them, and any significant consequences or considerations arising from them. Conclude with any relevant issue references at the end of the message.",
+						"markdownDescription": "Specifies the prompt to use to tell the AI provider how to structure or format the generated title and description",
+						"scope": "window",
+						"order": 3
+					},
+					"gitlens.experimental.generateCodeSuggestMessagePrompt": {
+						"type": "string",
+						"default": "Now, please generate a title and optional description. Ensure that it includes a precise and informative subject line that succinctly summarizes the crux of the changes in under 50 characters. If necessary, follow with an explanatory body providing insight into the nature of the changes, the reasoning behind them, and any significant consequences or considerations arising from them. Conclude with any relevant issue references at the end of the message.",
+						"markdownDescription": "Specifies the prompt to use to tell the AI provider how to structure or format the generated title and description",
+						"scope": "window",
+						"order": 3
 					},
 					"gitlens.ai.experimental.model": {
 						"type": [
@@ -5293,6 +5354,26 @@
 				}
 			},
 			{
+				"id": "gitlens.graphMinimapMarkerPullRequestsColor",
+				"description": "Specifies the color marking pull requests on the minimap of the _Commit Graph_",
+				"defaults": {
+					"light": "#ff8f18",
+					"highContrastLight": "#ff8f18",
+					"dark": "#c76801",
+					"highContrast": "#c76801"
+				}
+			},
+			{
+				"id": "gitlens.graphScrollMarkerPullRequestsColor",
+				"description": "Specifies the color marking pull requests on the scrollbar of the _Commit Graph_",
+				"defaults": {
+					"light": "#ff8f18",
+					"highContrastLight": "#ff8f18",
+					"dark": "#c76801",
+					"highContrast": "#c76801"
+				}
+			},
+			{
 				"id": "gitlens.graphMinimapMarkerRemoteBranchesColor",
 				"description": "Specifies the color marking remote branches on the minimap of the _Commit Graph_",
 				"defaults": {
@@ -5414,8 +5495,13 @@
 				"category": "GitLens"
 			},
 			{
+				"command": "gitlens.reset",
+				"title": "Reset Stored Data...",
+				"category": "GitLens"
+			},
+			{
 				"command": "gitlens.resetAIKey",
-				"title": "Reset Stored AI Key",
+				"title": "Reset Stored AI Keys...",
 				"category": "GitLens"
 			},
 			{
@@ -5466,16 +5552,6 @@
 			{
 				"command": "gitlens.plus.restore",
 				"title": "Restore Pro Features",
-				"category": "GitLens"
-			},
-			{
-				"command": "gitlens.plus.reset",
-				"title": "Reset",
-				"category": "GitLens"
-			},
-			{
-				"command": "gitlens.plus.resetRepositoryAccess",
-				"title": "Reset Repository Access Cache",
 				"category": "GitLens"
 			},
 			{
@@ -5852,21 +5928,21 @@
 				"title": "Open Changes with Next Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-next-commit)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffLeft",
 				"title": "Open Changes with Next Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-next-commit)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffRight",
 				"title": "Open Changes with Next Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-next-commit)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 			},
 			{
 				"command": "gitlens.diffWithPrevious",
@@ -6233,19 +6309,19 @@
 			},
 			{
 				"command": "gitlens.showCommitInView",
-				"title": "Open Inspect",
+				"title": "Inspect Commit Details",
 				"category": "GitLens",
 				"icon": "$(eye)"
 			},
 			{
 				"command": "gitlens.showLineCommitInView",
-				"title": "Open Line Inspect",
+				"title": "Inspect Line Commit Details",
 				"category": "GitLens",
 				"icon": "$(eye)"
 			},
 			{
 				"command": "gitlens.showInDetailsView",
-				"title": "Open Details",
+				"title": "Inspect Details",
 				"category": "GitLens",
 				"icon": "$(eye)"
 			},
@@ -6284,21 +6360,21 @@
 				"title": "Show Revision Commit",
 				"category": "GitLens",
 				"icon": "$(gitlens-commit-horizontal)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.showQuickRevisionDetailsInDiffLeft",
 				"title": "Show Revision Commit",
 				"category": "GitLens",
 				"icon": "$(gitlens-commit-horizontal)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.showQuickRevisionDetailsInDiffRight",
 				"title": "Show Revision Commit",
 				"category": "GitLens",
 				"icon": "$(gitlens-commit-horizontal)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.showQuickFileHistory",
@@ -6619,21 +6695,21 @@
 				"title": "Open File at Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-open-revision)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.openRevisionFileInDiffLeft",
 				"title": "Open File at Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-open-revision)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.openRevisionFileInDiffRight",
 				"title": "Open File at Revision",
 				"category": "GitLens",
 				"icon": "$(gitlens-open-revision)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ "
 			},
 			{
 				"command": "gitlens.openWorkingFile",
@@ -6713,21 +6789,6 @@
 				"category": "GitLens"
 			},
 			{
-				"command": "gitlens.resetAvatarCache",
-				"title": "Reset Avatar Cache",
-				"category": "GitLens"
-			},
-			{
-				"command": "gitlens.resetSuppressedWarnings",
-				"title": "Reset Suppressed Warnings",
-				"category": "GitLens"
-			},
-			{
-				"command": "gitlens.resetTrackedUsage",
-				"title": "Reset Tracked Usage",
-				"category": "GitLens"
-			},
-			{
 				"command": "gitlens.inviteToLiveShare",
 				"title": "Invite to Live Share",
 				"category": "GitLens",
@@ -6738,28 +6799,28 @@
 				"title": "Browse Repository from Revision",
 				"category": "GitLens",
 				"icon": "$(folder-opened)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.browseRepoAtRevisionInNewWindow",
 				"title": "Browse Repository from Revision in New Window",
 				"category": "GitLens",
 				"icon": "$(folder-opened)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.browseRepoBeforeRevision",
 				"title": "Browse Repository from Before Revision",
 				"category": "GitLens",
 				"icon": "$(folder-opened)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.browseRepoBeforeRevisionInNewWindow",
 				"title": "Browse Repository from Before Revision in New Window",
 				"category": "GitLens",
 				"icon": "$(folder-opened)",
-				"enablement": "gitlens:activeFileStatus =~ /revision/ && resourceScheme != git"
+				"enablement": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/"
 			},
 			{
 				"command": "gitlens.views.browseRepoAtRevision",
@@ -8734,7 +8795,7 @@
 			},
 			{
 				"command": "gitlens.graph.showInDetailsView",
-				"title": "Open Details",
+				"title": "Inspect Details",
 				"category": "GitLens",
 				"icon": "$(eye)"
 			},
@@ -9102,6 +9163,16 @@
 			{
 				"command": "gitlens.graph.scrollMarkerTagOff",
 				"title": "Hide Tag Markers",
+				"category": "GitLens"
+			},
+			{
+				"command": "gitlens.graph.scrollMarkerPullRequestOn",
+				"title": "Show Pull Request Markers",
+				"category": "GitLens"
+			},
+			{
+				"command": "gitlens.graph.scrollMarkerPullRequestOff",
+				"title": "Hide Pull Request Markers",
 				"category": "GitLens"
 			},
 			{
@@ -9528,14 +9599,6 @@
 					"when": "!config.gitlens.plusFeatures.enabled"
 				},
 				{
-					"command": "gitlens.plus.reset",
-					"when": "gitlens:debugging"
-				},
-				{
-					"command": "gitlens.plus.resetRepositoryAccess",
-					"when": "gitlens:enabled"
-				},
-				{
 					"command": "gitlens.plus.refreshRepositoryAccess",
 					"when": "gitlens:enabled"
 				},
@@ -9793,15 +9856,15 @@
 				},
 				{
 					"command": "gitlens.diffWithNext",
-					"when": "gitlens:activeFileStatus =~ /revision/ && !isInDiffEditor"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && !isInDiffEditor"
 				},
 				{
 					"command": "gitlens.diffWithNextInDiffLeft",
-					"when": "gitlens:activeFileStatus =~ /revision/ && isInDiffEditor && !isInDiffRightEditor"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffEditor && !isInDiffRightEditor"
 				},
 				{
 					"command": "gitlens.diffWithNextInDiffRight",
-					"when": "gitlens:activeFileStatus =~ /revision/ && isInDiffRightEditor"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffRightEditor"
 				},
 				{
 					"command": "gitlens.diffWithPrevious",
@@ -9837,7 +9900,7 @@
 				},
 				{
 					"command": "gitlens.diffWithWorking",
-					"when": "gitlens:activeFileStatus =~ /revision/"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.diffWithWorkingInDiffLeft",
@@ -10121,7 +10184,7 @@
 				},
 				{
 					"command": "gitlens.showQuickRevisionDetails",
-					"when": "gitlens:activeFileStatus =~ /revision/"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.showQuickRevisionDetailsInDiffLeft",
@@ -10161,11 +10224,11 @@
 				},
 				{
 					"command": "gitlens.connectRemoteProvider",
-					"when": "config.gitlens.integrations.enabled && gitlens:hasRichRemotes && !gitlens:hasConnectedRemotes"
+					"when": "config.gitlens.integrations.enabled && gitlens:repos:withHostingIntegrations && !gitlens:repos:withHostingIntegrationsConnected"
 				},
 				{
 					"command": "gitlens.disconnectRemoteProvider",
-					"when": "config.gitlens.integrations.enabled && gitlens:hasRichRemotes && gitlens:hasConnectedRemotes"
+					"when": "config.gitlens.integrations.enabled && gitlens:repos:withHostingIntegrationsConnected"
 				},
 				{
 					"command": "gitlens.copyCurrentBranch",
@@ -10197,7 +10260,7 @@
 				},
 				{
 					"command": "gitlens.openBranchesOnRemote",
-					"when": "gitlens:hasRemotes"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyRemoteBranchesUrl",
@@ -10205,7 +10268,7 @@
 				},
 				{
 					"command": "gitlens.openBranchOnRemote",
-					"when": "gitlens:hasRemotes"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.views.openBranchOnRemote",
@@ -10217,7 +10280,7 @@
 				},
 				{
 					"command": "gitlens.openCurrentBranchOnRemote",
-					"when": "gitlens:hasRemotes"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyDeepLinkToBranch",
@@ -10261,7 +10324,7 @@
 				},
 				{
 					"command": "gitlens.openCommitOnRemote",
-					"when": "gitlens:activeFileStatus =~ /blameable/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.views.openCommitOnRemote",
@@ -10273,7 +10336,7 @@
 				},
 				{
 					"command": "gitlens.copyRemoteCommitUrl",
-					"when": "gitlens:activeFileStatus =~ /tracked/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.views.copyRemoteCommitUrl",
@@ -10301,7 +10364,7 @@
 				},
 				{
 					"command": "gitlens.openAssociatedPullRequestOnRemote",
-					"when": "gitlens:hasRemotes"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.openFileFromRemote",
@@ -10309,11 +10372,11 @@
 				},
 				{
 					"command": "gitlens.openFileOnRemote",
-					"when": "gitlens:activeFileStatus =~ /tracked/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlToClipboard",
-					"when": "gitlens:activeFileStatus =~ /tracked/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlWithoutRange",
@@ -10321,11 +10384,11 @@
 				},
 				{
 					"command": "gitlens.openFileOnRemoteFrom",
-					"when": "gitlens:activeFileStatus =~ /tracked/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlFrom",
-					"when": "gitlens:activeFileStatus =~ /tracked/ && gitlens:activeFileStatus =~ /remotes/"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.openBlamePriorToChange",
@@ -10341,7 +10404,7 @@
 				},
 				{
 					"command": "gitlens.openRepoOnRemote",
-					"when": "gitlens:hasRemotes"
+					"when": "gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.copyRemoteRepositoryUrl",
@@ -10349,7 +10412,7 @@
 				},
 				{
 					"command": "gitlens.openRevisionFile",
-					"when": "gitlens:activeFileStatus =~ /revision/ && isInDiffEditor"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffEditor"
 				},
 				{
 					"command": "gitlens.openRevisionFileInDiffLeft",
@@ -10361,7 +10424,7 @@
 				},
 				{
 					"command": "gitlens.openWorkingFile",
-					"when": "gitlens:activeFileStatus =~ /revision/"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.openWorkingFileInDiffLeft",
@@ -10400,36 +10463,24 @@
 					"when": "false"
 				},
 				{
-					"command": "gitlens.resetAvatarCache",
-					"when": "gitlens:enabled"
-				},
-				{
-					"command": "gitlens.resetSuppressedWarnings",
-					"when": "gitlens:enabled"
-				},
-				{
-					"command": "gitlens.resetTrackedUsage",
-					"when": "gitlens:enabled"
-				},
-				{
 					"command": "gitlens.inviteToLiveShare",
 					"when": "false"
 				},
 				{
 					"command": "gitlens.browseRepoAtRevision",
-					"when": "!gitlens:hasVirtualFolders && gitlens:activeFileStatus =~ /revision/"
+					"when": "!gitlens:hasVirtualFolders && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.browseRepoAtRevisionInNewWindow",
-					"when": "!gitlens:hasVirtualFolders && gitlens:activeFileStatus =~ /revision/"
+					"when": "!gitlens:hasVirtualFolders && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.browseRepoBeforeRevision",
-					"when": "!gitlens:hasVirtualFolders && gitlens:activeFileStatus =~ /revision/"
+					"when": "!gitlens:hasVirtualFolders && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.browseRepoBeforeRevisionInNewWindow",
-					"when": "!gitlens:hasVirtualFolders && gitlens:activeFileStatus =~ /revision/"
+					"when": "!gitlens:hasVirtualFolders && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 				},
 				{
 					"command": "gitlens.views.browseRepoAtRevision",
@@ -10449,15 +10500,15 @@
 				},
 				{
 					"command": "gitlens.fetchRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
 				},
 				{
 					"command": "gitlens.pullRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
 				},
 				{
 					"command": "gitlens.pushRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders"
 				},
 				{
 					"command": "gitlens.views.addRemote",
@@ -12052,6 +12103,14 @@
 					"when": "false"
 				},
 				{
+					"command": "gitlens.graph.scrollMarkerPullRequestOn",
+					"when": "false"
+				},
+				{
+					"command": "gitlens.graph.scrollMarkerPullRequestOff",
+					"when": "false"
+				},
+				{
 					"command": "gitlens.graph.shareAsCloudPatch",
 					"when": "false"
 				},
@@ -12085,7 +12144,7 @@
 				},
 				{
 					"submenu": "gitlens/editor/context/openOn",
-					"when": "editorTextFocus && gitlens:activeFileStatus =~ /remotes/ && config.gitlens.menus.editor.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "editorTextFocus && gitlens:repos:withRemotes && config.gitlens.menus.editor.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "1_z_gitlens_open@2"
 				},
 				{
@@ -12149,7 +12208,7 @@
 			"editor/lineNumber/context": [
 				{
 					"submenu": "gitlens/editor/lineNumber/context/share",
-					"when": "gitlens:hasRemotes && config.gitlens.menus.editorGutter.share && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "gitlens:repos:withRemotes && config.gitlens.menus.editorGutter.share && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "2_gitlens@2"
 				},
 				{
@@ -12159,7 +12218,7 @@
 				},
 				{
 					"submenu": "gitlens/editor/lineNumber/context/openOn",
-					"when": "gitlens:hasRemotes && config.gitlens.menus.editorGutter.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "gitlens:repos:withRemotes && config.gitlens.menus.editorGutter.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "3_gitlens@2"
 				}
 			],
@@ -12170,47 +12229,47 @@
 				},
 				{
 					"command": "gitlens.diffWithWorking",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && !isInDiffEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && !isInDiffEditor",
 					"group": "navigation@-99"
 				},
 				{
 					"command": "gitlens.diffWithWorkingInDiffLeft",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffEditor && !isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffEditor && !isInDiffRightEditor",
 					"group": "navigation@-99"
 				},
 				{
 					"command": "gitlens.diffWithWorkingInDiffRight",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffRightEditor",
 					"group": "navigation@-99"
 				},
 				{
 					"command": "gitlens.openWorkingFile",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme == git && !isInDiffEditor",
+					"when": "gitlens:enabled && resourceScheme == git && !isInDiffEditor",
 					"group": "navigation@-98"
 				},
 				{
 					"command": "gitlens.openWorkingFile",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && !isInDiffEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && !isInDiffEditor",
 					"group": "navigation@-98"
 				},
 				{
 					"command": "gitlens.openWorkingFileInDiffLeft",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffEditor && !isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffEditor && !isInDiffRightEditor",
 					"group": "navigation@-98"
 				},
 				{
 					"command": "gitlens.openWorkingFileInDiffRight",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffRightEditor",
 					"group": "navigation@-98"
 				},
 				{
 					"command": "gitlens.openRevisionFileInDiffLeft",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffEditor && !isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffEditor && !isInDiffRightEditor",
 					"group": "navigation@-97"
 				},
 				{
 					"command": "gitlens.openRevisionFileInDiffRight",
-					"when": "gitlens:activeFileStatus =~ /revision/ && resourceScheme =~ /^(?!(file|git)$).*$/ && isInDiffRightEditor",
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|pr)$/ && isInDiffRightEditor",
 					"group": "navigation@-97"
 				},
 				{
@@ -12333,12 +12392,12 @@
 			"editor/title/context": [
 				{
 					"command": "gitlens.copyRemoteFileUrlWithoutRange",
-					"when": "gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.editorTab.clipboard && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.editorTab.clipboard && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "1_cutcopypaste@100"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlFrom",
-					"when": "gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.editorTab.clipboard && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.editorTab.clipboard && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "1_cutcopypaste@101"
 				},
 				{
@@ -12353,7 +12412,7 @@
 				},
 				{
 					"submenu": "gitlens/editor/openOn",
-					"when": "gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.editorTab.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
+					"when": "gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.editorTab.remote && isFileSystemResource && resourceScheme =~ /^(?!output$|vscode-(?!remote|vfs$)).*$/",
 					"group": "2_a_gitlens_open@2"
 				},
 				{
@@ -12385,7 +12444,7 @@
 				},
 				{
 					"submenu": "gitlens/explorer/openOn",
-					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.explorer.remote",
+					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.explorer.remote",
 					"group": "4_t_gitlens@1"
 				},
 				{
@@ -12395,12 +12454,12 @@
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlWithoutRange",
-					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.explorer.clipboard",
+					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.explorer.clipboard",
 					"group": "6_copypath@100"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlFrom",
-					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:hasRemotes && config.gitlens.menus.explorer.clipboard",
+					"when": "!explorerResourceIsRoot && gitlens:enabled && gitlens:repos:withRemotes && config.gitlens.menus.explorer.clipboard",
 					"group": "6_copypath@101"
 				}
 			],
@@ -12566,7 +12625,7 @@
 				},
 				{
 					"submenu": "gitlens/scm/resourceState/openOn",
-					"when": "gitlens:enabled && gitlens:hasRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/ && config.gitlens.menus.scmItem.remote",
+					"when": "gitlens:enabled && gitlens:repos:withRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/ && config.gitlens.menus.scmItem.remote",
 					"group": "navigation"
 				},
 				{
@@ -12591,14 +12650,14 @@
 				},
 				{
 					"command": "gitlens.copyRelativePathToClipboard",
-					"when": "gitlens:enabled && gitlens:hasRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/ && config.gitlens.menus.scmItem.clipboard",
+					"when": "gitlens:enabled && gitlens:repos:withRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/ && config.gitlens.menus.scmItem.clipboard",
 					"group": "7_cutcopypaste@98"
 				}
 			],
 			"timeline/item/context": [
 				{
 					"command": "gitlens.openCommitOnRemote",
-					"when": "false && gitlens:enabled && gitlens:hasRemotes && timelineItem =~ /git:file:commit\\b/",
+					"when": "false && gitlens:enabled && gitlens:repos:withRemotes && timelineItem =~ /git:file:commit\\b/",
 					"group": "inline@99",
 					"alt": "gitlens.copyRemoteCommitUrl"
 				}
@@ -12676,17 +12735,17 @@
 				},
 				{
 					"command": "gitlens.pushRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
 					"group": "navigation@1"
 				},
 				{
 					"command": "gitlens.pullRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
 					"group": "navigation@2"
 				},
 				{
 					"command": "gitlens.fetchRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.commits/",
 					"group": "navigation@3"
 				},
 				{
@@ -13111,17 +13170,17 @@
 				},
 				{
 					"command": "gitlens.pushRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
 					"group": "navigation@1"
 				},
 				{
 					"command": "gitlens.pullRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
 					"group": "navigation@2"
 				},
 				{
 					"command": "gitlens.fetchRepositories",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && view =~ /^gitlens\\.views\\.repositories/",
 					"group": "navigation@3"
 				},
 				{
@@ -13595,27 +13654,27 @@
 				},
 				{
 					"command": "gitlens.views.publishBranch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@8"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@8"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@8"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@8"
 				},
 				{
 					"command": "gitlens.views.createPullRequest",
-					"when": "gitlens:hasRemotes && gitlens:action:createPullRequest && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && gitlens:action:createPullRequest && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@9"
 				},
 				{
@@ -13625,13 +13684,13 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
 					"group": "inline@79",
 					"alt": "gitlens.views.pushWithForce"
 				},
 				{
 					"command": "gitlens.views.pushToCommit",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
 					"group": "inline@80"
 				},
 				{
@@ -13673,22 +13732,22 @@
 				},
 				{
 					"command": "gitlens.views.publishBranch",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@3"
 				},
 				{
@@ -13738,7 +13797,7 @@
 				},
 				{
 					"command": "gitlens.views.createPullRequest",
-					"when": "!listMultiSelection && gitlens:hasRemotes && gitlens:action:createPullRequest && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && gitlens:action:createPullRequest && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions_@10"
 				},
 				{
@@ -13879,7 +13938,7 @@
 				},
 				{
 					"command": "gitlens.views.openCommitOnRemote",
-					"when": "viewItem =~ /gitlens:commit\\b/ && gitlens:hasRemotes",
+					"when": "viewItem =~ /gitlens:commit\\b/ && gitlens:repos:withRemotes",
 					"group": "inline@99",
 					"alt": "gitlens.views.copyRemoteCommitUrl"
 				},
@@ -13900,12 +13959,12 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.views.pushToCommit",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:commit\\b(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
@@ -13991,12 +14050,12 @@
 				},
 				{
 					"command": "gitlens.views.openCommitOnRemote",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:commit\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:commit\\b/",
 					"group": "3_gitlens_explore@2"
 				},
 				{
 					"command": "gitlens.views.openCommitOnRemote.multi",
-					"when": "listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:commit\\b/",
+					"when": "listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:commit\\b/",
 					"group": "3_gitlens_explore@2"
 				},
 				{
@@ -14046,12 +14105,12 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
 					"group": "inline@-1"
 				},
 				{
 					"command": "gitlens.views.pushToCommit",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
 					"group": "inline@-1"
 				},
 				{
@@ -14093,7 +14152,7 @@
 				},
 				{
 					"command": "gitlens.openFileOnRemote",
-					"when": "viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:hasRemotes",
+					"when": "viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:repos:withRemotes",
 					"group": "inline@99",
 					"alt": "gitlens.copyRemoteFileUrlWithoutRange"
 				},
@@ -14139,7 +14198,7 @@
 				},
 				{
 					"command": "gitlens.openFileOnRemote",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:repos:withRemotes",
 					"group": "2_gitlens_quickopen_file@5",
 					"alt": "gitlens.copyRemoteFileUrlWithoutRange"
 				},
@@ -14185,13 +14244,13 @@
 				},
 				{
 					"command": "gitlens.openFileOnRemote",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:(history:(file|line)|status:file)\\b/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:(history:(file|line)|status:file)\\b/ && gitlens:repos:withRemotes",
 					"group": "5_gitlens_open@2",
 					"alt": "gitlens.copyRemoteFileUrlWithoutRange"
 				},
 				{
 					"command": "gitlens.connectRemoteProvider",
-					"when": "config.gitlens.integrations.enabled && viewItem =~ /gitlens:autolinked:items\\b/ && gitlens:hasRichRemotes && !gitlens:hasConnectedRemotes",
+					"when": "config.gitlens.integrations.enabled && viewItem =~ /gitlens:autolinked:items\\b/ && gitlens:repos:withHostingIntegrations && !gitlens:repos:withHostingIntegrationsConnected",
 					"group": "inline@98"
 				},
 				{
@@ -14201,7 +14260,7 @@
 				},
 				{
 					"command": "gitlens.connectRemoteProvider",
-					"when": "config.gitlens.integrations.enabled && viewItem =~ /gitlens:autolinked:items\\b/ && gitlens:hasRichRemotes && !gitlens:hasConnectedRemotes",
+					"when": "config.gitlens.integrations.enabled && viewItem =~ /gitlens:autolinked:items\\b/ && gitlens:repos:withHostingIntegrations && !gitlens:repos:withHostingIntegrationsConnected",
 					"group": "6_gitlens_actions@1"
 				},
 				{
@@ -14435,18 +14494,18 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@96",
 					"alt": "gitlens.views.pushWithForce"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@97"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "inline@98"
 				},
 				{
@@ -14461,22 +14520,22 @@
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pushWithForce",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repository\\b(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
@@ -14496,7 +14555,7 @@
 				},
 				{
 					"command": "gitlens.openRepoOnRemote",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:repository\\b/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:repository\\b/ && gitlens:repos:withRemotes",
 					"group": "2_gitlens_quickopen@4"
 				},
 				{
@@ -14541,18 +14600,18 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)/",
 					"group": "inline@96",
 					"alt": "gitlens.views.pushWithForce"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?=.*?\\b\\+behind\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?=.*?\\b\\+behind\\b)/",
 					"group": "inline@97"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?!.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b(?!.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)/",
 					"group": "inline@98"
 				},
 				{
@@ -14577,22 +14636,22 @@
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pushWithForce",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:repo-folder\\b/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
@@ -14607,7 +14666,7 @@
 				},
 				{
 					"command": "gitlens.openRepoOnRemote",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:repo-folder\\b/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:repo-folder\\b/ && gitlens:repos:withRemotes",
 					"group": "2_gitlens_quickopen@3"
 				},
 				{
@@ -14667,64 +14726,64 @@
 				},
 				{
 					"command": "gitlens.views.publishRepository",
-					"when": "!gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(missing|none)/",
+					"when": "!gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(missing|none)/",
 					"group": "inline@99"
 				},
 				{
 					"command": "gitlens.views.addRemote",
-					"when": "!gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:none/",
+					"when": "!gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:none/",
 					"group": "inline@2"
 				},
 				{
 					"command": "gitlens.views.publishBranch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(missing|none)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(missing|none)/",
 					"group": "inline@99"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:ahead/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:ahead/",
 					"group": "inline@99",
 					"alt": "gitlens.views.pushWithForce"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:behind/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:behind/",
 					"group": "inline@99"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(?!(missing|none))/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status(\\-branch)?:upstream:(?!(missing|none))/",
 					"group": "inline@98"
 				},
 				{
 					"command": "gitlens.views.createPullRequest",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && gitlens:action:createPullRequest && viewItem =~ /gitlens:status:upstream:same/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && gitlens:action:createPullRequest && viewItem =~ /gitlens:status:upstream:same/",
 					"group": "inline@1"
 				},
 				{
 					"command": "gitlens.views.openBranchOnRemote",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status:upstream:same/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status:upstream:same/",
 					"group": "inline@97",
 					"alt": "gitlens.copyRemoteBranchUrl"
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:ahead",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:ahead",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pushWithForce",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:ahead",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:ahead",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.views.pull",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:behind",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem == gitlens:status:upstream:behind",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.fetch",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
 					"group": "1_gitlens_actions@3"
 				},
 				{
@@ -14739,12 +14798,12 @@
 				},
 				{
 					"command": "gitlens.views.createPullRequest",
-					"when": "!listMultiSelection && gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && gitlens:action:createPullRequest && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && gitlens:action:createPullRequest && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
 					"group": "1_gitlens_secondary_actions@3"
 				},
 				{
 					"command": "gitlens.views.openBranchOnRemote",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
 					"group": "2_gitlens_quickopen_remote@1"
 				},
 				{
@@ -14759,7 +14818,7 @@
 				},
 				{
 					"command": "gitlens.copyRemoteBranchUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:status:upstream:(?!(missing|none))/",
 					"group": "7_gitlens_cutcopypaste@1"
 				},
 				{
@@ -14905,7 +14964,7 @@
 				{
 					"command": "gitlens.openComparisonOnRemote",
 					"when": "!listMultiSelection && viewItem =~ /gitlens:compare:results(?!:)\\b/",
-					"group": "2_gitlens_quickopen@1 && gitlens:hasRemotes"
+					"group": "2_gitlens_quickopen@1 && gitlens:repos:withRemotes"
 				},
 				{
 					"command": "gitlens.views.openDirectoryDiff",
@@ -14934,13 +14993,13 @@
 				},
 				{
 					"command": "gitlens.openComparisonOnRemote",
-					"when": "viewItem =~ /gitlens:compare:results:commits\\b/ && gitlens:hasRemotes",
+					"when": "viewItem =~ /gitlens:compare:results:commits\\b/ && gitlens:repos:withRemotes",
 					"group": "inline@99",
 					"alt": "gitlens.copyRemoteComparisonUrl"
 				},
 				{
 					"command": "gitlens.openComparisonOnRemote",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:compare:results:commits\\b/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:compare:results:commits\\b/ && gitlens:repos:withRemotes",
 					"group": "3_gitlens_explore@0"
 				},
 				{
@@ -15174,22 +15233,22 @@
 				},
 				{
 					"command": "gitlens.graph.publishBranch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?!.*?\\b\\+remote\\b)(?!.*?\\b\\+tracking\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.graph.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+ahead\\b)(?!.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.graph.pull",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+behind\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
 					"command": "gitlens.graph.fetch",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+closed\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)(?!.*?\\b\\+closed\\b)/",
 					"group": "1_gitlens_actions@3"
 				},
 				{
@@ -15234,7 +15293,7 @@
 				},
 				{
 					"command": "gitlens.graph.createPullRequest",
-					"when": "gitlens:hasRemotes && gitlens:action:createPullRequest && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)/",
+					"when": "gitlens:repos:withRemotes && gitlens:action:createPullRequest && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)/",
 					"group": "1_gitlens_actions_@10"
 				},
 				{
@@ -15259,7 +15318,7 @@
 				},
 				{
 					"command": "gitlens.graph.openBranchOnRemote",
-					"when": "gitlens:hasRemotes && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)/",
+					"when": "gitlens:repos:withRemotes && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(tracking|remote)\\b)/",
 					"group": "2_gitlens_quickopen@1"
 				},
 				{
@@ -15344,12 +15403,12 @@
 				},
 				{
 					"command": "gitlens.graph.openCommitOnRemote",
-					"when": "!listMultiSelection && gitlens:hasRemotes && webviewItem =~ /gitlens:commit\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && webviewItem =~ /gitlens:commit\\b/",
 					"group": "3_gitlens_explore@2"
 				},
 				{
 					"command": "gitlens.graph.openCommitOnRemote.multi",
-					"when": "listMultiSelection && gitlens:hasRemotes && webviewItems =~ /gitlens:commit\\b/",
+					"when": "listMultiSelection && gitlens:repos:withRemotes && webviewItems =~ /gitlens:commit\\b/",
 					"group": "3_gitlens_explore@2"
 				},
 				{
@@ -15641,12 +15700,12 @@
 				},
 				{
 					"command": "gitlens.copyRemoteBranchUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)/",
 					"group": "2_gitlens@50"
 				},
 				{
 					"command": "gitlens.graph.copyRemoteBranchUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && webviewItem =~ /gitlens:branch\\b(?=.*?\\b\\+(remote|tracking)\\b)/",
 					"group": "2_gitlens@50"
 				},
 				{
@@ -15666,12 +15725,12 @@
 				},
 				{
 					"command": "gitlens.copyDeepLinkToFile",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:repos:withRemotes",
 					"group": "1_gitlens@26"
 				},
 				{
 					"command": "gitlens.copyDeepLinkToFileAtRevision",
-					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:hasRemotes",
+					"when": "!listMultiSelection && viewItem =~ /gitlens:file\\b((?=.*?\\b\\+committed\\b)|:results)/ && gitlens:repos:withRemotes",
 					"group": "1_gitlens@27"
 				},
 				{
@@ -15681,42 +15740,42 @@
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlWithoutRange",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:(file\\b(?=.*?\\b\\+committed\\b)|history:(file|line)|status:file)\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:(file\\b(?=.*?\\b\\+committed\\b)|history:(file|line)|status:file)\\b/",
 					"group": "2_gitlens@1"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlFrom",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:(file\\b(?=.*?\\b\\+committed\\b)|history:(file|line)|status:file)\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:(file\\b(?=.*?\\b\\+committed\\b)|history:(file|line)|status:file)\\b/",
 					"group": "2_gitlens@2"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlWithoutRange",
-					"when": "!listMultiSelection && gitlens:enabled && gitlens:hasRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/",
+					"when": "!listMultiSelection && gitlens:enabled && gitlens:repos:withRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/",
 					"group": "2_gitlens@1"
 				},
 				{
 					"command": "gitlens.copyRemoteFileUrlFrom",
-					"when": "!listMultiSelection && gitlens:enabled && gitlens:hasRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/",
+					"when": "!listMultiSelection && gitlens:enabled && gitlens:repos:withRemotes && scmProvider == git && scmResourceGroup =~ /^(workingTree|index|merge)$/",
 					"group": "2_gitlens@2"
 				},
 				{
 					"command": "gitlens.views.copyRemoteCommitUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:(commit|file\\b(?=.*?\\b\\+committed\\b))/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:(commit|file\\b(?=.*?\\b\\+committed\\b))/",
 					"group": "2_gitlens@25"
 				},
 				{
 					"command": "gitlens.views.copyRemoteCommitUrl.multi",
-					"when": "listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:(commit|file\\b(?=.*?\\b\\+committed\\b))/",
+					"when": "listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:(commit|file\\b(?=.*?\\b\\+committed\\b))/",
 					"group": "2_gitlens@25"
 				},
 				{
 					"command": "gitlens.graph.copyRemoteCommitUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && webviewItem =~ /gitlens:commit\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && webviewItem =~ /gitlens:commit\\b/",
 					"group": "2_gitlens@25"
 				},
 				{
 					"command": "gitlens.graph.copyRemoteCommitUrl.multi",
-					"when": "listMultiSelection && gitlens:hasRemotes && webviewItems =~ /gitlens:commit\\b/",
+					"when": "listMultiSelection && gitlens:repos:withRemotes && webviewItems =~ /gitlens:commit\\b/",
 					"group": "2_gitlens@25"
 				},
 				{
@@ -15741,7 +15800,7 @@
 				},
 				{
 					"command": "gitlens.copyRemoteRepositoryUrl",
-					"when": "!listMultiSelection && gitlens:hasRemotes && viewItem =~ /gitlens:(remote|repo-folder|repository)\\b/",
+					"when": "!listMultiSelection && gitlens:repos:withRemotes && viewItem =~ /gitlens:(remote|repo-folder|repository)\\b/",
 					"group": "2_gitlens@99"
 				}
 			],
@@ -15823,7 +15882,7 @@
 				},
 				{
 					"command": "gitlens.views.openCommitOnRemote",
-					"when": "view =~ /^gitlens\\.views\\.(fileHistory|lineHistory)/ && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)/ && gitlens:hasRemotes",
+					"when": "view =~ /^gitlens\\.views\\.(fileHistory|lineHistory)/ && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)/ && gitlens:repos:withRemotes",
 					"group": "navigation@3",
 					"alt": "gitlens.copyRemoteCommitUrl"
 				},
@@ -15839,12 +15898,12 @@
 				},
 				{
 					"command": "gitlens.views.push",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?=.*?\\b\\+HEAD\\b)/",
 					"group": "1_gitlens_actions@1"
 				},
 				{
 					"command": "gitlens.views.pushToCommit",
-					"when": "gitlens:hasRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
+					"when": "gitlens:repos:withRemotes && !gitlens:readonly && !gitlens:untrusted && !gitlens:hasVirtualFolders && viewItem =~ /gitlens:file\\b(?=.*?\\b\\+committed\\b)(?=.*?\\b\\+current\\b)(?=.*?\\b\\+unpublished\\b)(?!.*?\\b\\+HEAD\\b)/",
 					"group": "1_gitlens_actions@2"
 				},
 				{
@@ -16019,27 +16078,32 @@
 					"group": "2_gitlens@4"
 				},
 				{
-					"command": "gitlens.showLineCommitInView",
+					"command": "gitlens.showQuickCommitFileDetails",
 					"group": "3_gitlens@1"
 				},
 				{
-					"command": "gitlens.showQuickCommitFileDetails",
+					"command": "gitlens.showLineCommitInView",
+					"group": "3_gitlens@2"
+				},
+				{
+					"command": "gitlens.showCommitsInView",
+					"when": "editorTextFocus && editorHasSelection",
 					"group": "3_gitlens@2"
 				},
 				{
 					"command": "gitlens.showQuickRevisionDetails",
-					"when": "gitlens:activeFileStatus =~ /revision/ && !isInDiffEditor",
-					"group": "3_gitlens@2"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && !isInDiffEditor",
+					"group": "3_gitlens_1@1"
 				},
 				{
 					"command": "gitlens.showQuickRevisionDetailsInDiffLeft",
-					"when": "gitlens:activeFileStatus =~ /revision/ && isInDiffEditor && !isInDiffRightEditor",
-					"group": "3_gitlens@2"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffEditor && !isInDiffRightEditor",
+					"group": "3_gitlens_1@1"
 				},
 				{
 					"command": "gitlens.showQuickRevisionDetailsInDiffRight",
-					"when": "gitlens:activeFileStatus =~ /revision/ && isInDiffRightEditor",
-					"group": "3_gitlens@2"
+					"when": "gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffRightEditor",
+					"group": "3_gitlens_1@1"
 				}
 			],
 			"gitlens/editor/context/openOn": [
@@ -16114,11 +16178,11 @@
 					"group": "1_gitlens@2"
 				},
 				{
-					"command": "gitlens.showLineCommitInView",
+					"command": "gitlens.showQuickCommitFileDetails",
 					"group": "3_gitlens@1"
 				},
 				{
-					"command": "gitlens.showQuickCommitFileDetails",
+					"command": "gitlens.showLineCommitInView",
 					"group": "3_gitlens@2"
 				}
 			],
@@ -16281,6 +16345,16 @@
 					"command": "gitlens.graph.scrollMarkerTagOff",
 					"when": "webviewItem =~ /gitlens:graph:settings\\b/ && webviewItemValue =~ /\\bscrollMarker:tags:enabled\\b/",
 					"group": "4_settings@4"
+				},
+				{
+					"command": "gitlens.graph.scrollMarkerPullRequestOn",
+					"when": "webviewItem =~ /gitlens:graph:settings\\b/ && webviewItemValue =~ /\\bscrollMarker:pullRequests:disabled\\b/",
+					"group": "4_settings@5"
+				},
+				{
+					"command": "gitlens.graph.scrollMarkerPullRequestOff",
+					"when": "webviewItem =~ /gitlens:graph:settings\\b/ && webviewItemValue =~ /\\bscrollMarker:pullRequests:enabled\\b/",
+					"group": "4_settings@5"
 				}
 			],
 			"gitlens/scm/resourceGroup/changes": [
@@ -16840,46 +16914,46 @@
 			{
 				"command": "gitlens.diffWithNext",
 				"key": "alt+.",
-				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && !isInDiffEditor"
+				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && !isInDiffEditor"
 			},
 			{
 				"command": "gitlens.diffWithNext",
 				"key": "ctrl+shift+g .",
 				"mac": "cmd+alt+g .",
-				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && !isInDiffEditor"
+				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && !isInDiffEditor"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffLeft",
 				"key": "alt+.",
-				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && isInDiffEditor && !isInDiffRightEditor"
+				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffEditor && !isInDiffRightEditor"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffLeft",
 				"key": "ctrl+shift+g .",
 				"mac": "cmd+alt+g .",
-				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && isInDiffEditor && !isInDiffRightEditor"
+				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffEditor && !isInDiffRightEditor"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffRight",
 				"key": "alt+.",
-				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && isInDiffRightEditor"
+				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffRightEditor"
 			},
 			{
 				"command": "gitlens.diffWithNextInDiffRight",
 				"key": "ctrl+shift+g .",
 				"mac": "cmd+alt+g .",
-				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:activeFileStatus =~ /revision/ && isInDiffRightEditor"
+				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/ && isInDiffRightEditor"
 			},
 			{
 				"command": "gitlens.diffWithWorking",
 				"key": "shift+alt+.",
-				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:activeFileStatus =~ /revision/"
+				"when": "config.gitlens.keymap == alternate && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 			},
 			{
 				"command": "gitlens.diffWithWorking",
 				"key": "ctrl+shift+g shift+.",
 				"mac": "cmd+alt+g shift+.",
-				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:activeFileStatus =~ /revision/"
+				"when": "config.gitlens.keymap == chorded && editorTextFocus && gitlens:enabled && resourceScheme =~ /^(gitlens|git|pr)$/"
 			},
 			{
 				"command": "gitlens.diffLineWithPrevious",
@@ -17485,26 +17559,27 @@
 		"vscode:prepublish": "yarn run bundle"
 	},
 	"dependencies": {
-		"@gitkraken/gitkraken-components": "10.3.0",
-		"@gitkraken/provider-apis": "0.22.1",
+		"@gitkraken/gitkraken-components": "10.5.1",
+		"@gitkraken/provider-apis": "0.22.9",
 		"@gitkraken/shared-web-components": "0.1.1-rc.15",
 		"@lit/react": "1.0.5",
 		"@microsoft/fast-element": "1.13.0",
 		"@octokit/graphql": "8.1.1",
 		"@octokit/request": "9.1.1",
 		"@octokit/types": "13.5.0",
-		"@opentelemetry/api": "1.8.0",
-		"@opentelemetry/exporter-trace-otlp-http": "0.51.1",
-		"@opentelemetry/sdk-trace-base": "1.24.1",
+		"@opentelemetry/api": "1.9.0",
+		"@opentelemetry/exporter-trace-otlp-http": "0.52.0",
+		"@opentelemetry/sdk-trace-base": "1.25.0",
 		"@shoelace-style/shoelace": "2.15.1",
 		"@vscode/codicons": "0.0.36",
 		"@vscode/webview-ui-toolkit": "1.4.0",
 		"ansi-regex": "6.0.1",
-		"billboard.js": "3.11.3",
+		"billboard.js": "3.12.4",
 		"fast-string-truncated-width": "1.1.0",
 		"https-proxy-agent": "5.0.1",
 		"iconv-lite": "0.6.3",
-		"lit": "3.1.3",
+		"lit": "3.1.4",
+		"marked": "12.0.2",
 		"node-fetch": "2.7.0",
 		"os-browserify": "0.3.0",
 		"path-browserify": "1.0.1",
@@ -17514,7 +17589,7 @@
 	},
 	"devDependencies": {
 		"@eamodio/eslint-lite-webpack-plugin": "0.0.8",
-		"@swc/core": "1.5.7",
+		"@swc/core": "1.5.29",
 		"@twbs/fantasticon": "3.0.0",
 		"@types/mocha": "10.0.6",
 		"@types/node": "18.15.0",
@@ -17522,11 +17597,11 @@
 		"@types/react-dom": "17.0.21",
 		"@types/sortablejs": "1.15.8",
 		"@types/vscode": "1.82.0",
-		"@typescript-eslint/eslint-plugin": "7.10.0",
-		"@typescript-eslint/parser": "7.10.0",
-		"@vscode/test-electron": "2.3.10",
+		"@typescript-eslint/eslint-plugin": "7.13.0",
+		"@typescript-eslint/parser": "7.13.0",
+		"@vscode/test-electron": "2.4.0",
 		"@vscode/test-web": "0.0.54",
-		"@vscode/vsce": "2.26.1",
+		"@vscode/vsce": "2.27.0",
 		"circular-dependency-plugin": "5.2.2",
 		"clean-webpack-plugin": "4.0.0",
 		"concurrently": "8.2.2",
@@ -17534,28 +17609,28 @@
 		"csp-html-webpack-plugin": "5.1.0",
 		"css-loader": "7.1.2",
 		"css-minimizer-webpack-plugin": "7.0.0",
-		"cssnano-preset-advanced": "7.0.1",
-		"esbuild": "0.21.4",
+		"cssnano-preset-advanced": "7.0.2",
+		"esbuild": "0.21.5",
 		"esbuild-loader": "4.1.0",
-		"esbuild-sass-plugin": "3.3.0",
+		"esbuild-sass-plugin": "3.3.1",
 		"eslint": "8.57.0",
 		"eslint-cli": "1.1.1",
 		"eslint-import-resolver-typescript": "3.6.1",
 		"eslint-plugin-anti-trojan-source": "1.1.1",
 		"eslint-plugin-import": "2.29.1",
-		"eslint-plugin-lit": "1.13.0",
+		"eslint-plugin-lit": "1.14.0",
 		"eslint-plugin-wc": "2.1.0",
 		"fork-ts-checker-webpack-plugin": "6.5.3",
 		"glob": "10.4.1",
 		"html-loader": "5.0.0",
 		"html-webpack-plugin": "5.6.0",
-		"image-minimizer-webpack-plugin": "4.0.0",
+		"image-minimizer-webpack-plugin": "4.0.2",
 		"license-checker-rseidelsohn": "4.3.0",
 		"lz-string": "1.5.0",
 		"mini-css-extract-plugin": "2.9.0",
 		"mocha": "10.4.0",
 		"prettier": "3.1.0",
-		"sass": "1.77.2",
+		"sass": "1.77.5",
 		"sass-loader": "14.2.1",
 		"schema-utils": "4.2.0",
 		"sharp": "0.32.6",
@@ -17563,15 +17638,15 @@
 		"terser-webpack-plugin": "5.3.10",
 		"ts-loader": "9.5.1",
 		"tsc-alias": "1.8.10",
-		"typescript": "5.4.5",
-		"webpack": "5.91.0",
+		"typescript": "5.5.1-rc",
+		"webpack": "5.92.0",
 		"webpack-bundle-analyzer": "4.10.2",
 		"webpack-cli": "5.1.4",
 		"webpack-node-externals": "3.0.0",
 		"webpack-require-from": "1.8.6"
 	},
 	"resolutions": {
-		"esbuild": "0.21.4",
+		"esbuild": "0.21.5",
 		"iconv-lite": "0.6.3",
 		"node-fetch": "2.7.0",
 		"semver-regex": "4.0.5"

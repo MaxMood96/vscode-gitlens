@@ -80,6 +80,8 @@ export interface Config {
 	readonly detectNestedRepositories: boolean;
 	readonly experimental: {
 		readonly generateCommitMessagePrompt: string;
+		readonly generateCloudPatchMessagePrompt: string;
+		readonly generateCodeSuggestionMessagePrompt: string;
 	};
 	readonly fileAnnotations: {
 		readonly preserveWhileEditing: boolean;
@@ -88,19 +90,24 @@ export interface Config {
 	};
 	readonly launchpad: {
 		readonly allowMultiple: boolean;
+		readonly ignoredOrganizations: string[];
 		readonly ignoredRepositories: string[];
 		readonly staleThreshold: number | null;
 		readonly indicator: {
 			readonly enabled: boolean;
 			readonly openInEditor: boolean;
 			readonly icon: 'default' | 'group';
-			readonly label: false | 'item';
+			readonly label: false | 'item' | 'counts';
 			readonly useColors: boolean;
 			readonly groups: ('mergeable' | 'blocked' | 'needs-review' | 'follow-up')[];
 			readonly polling: {
 				enabled: boolean;
 				interval: number;
 			};
+		};
+		readonly experimental: {
+			readonly queryLimit: number;
+			readonly queryUseInvolvesFilter: boolean;
 		};
 	};
 	readonly gitCommands: {
@@ -298,8 +305,18 @@ export type DateSource = 'authored' | 'committed';
 export type DateStyle = 'absolute' | 'relative';
 export type FileAnnotationType = 'blame' | 'changes' | 'heatmap';
 export type GitCommandSorting = 'name' | 'usage';
-export type GraphScrollMarkersAdditionalTypes = 'localBranches' | 'remoteBranches' | 'stashes' | 'tags';
-export type GraphMinimapMarkersAdditionalTypes = 'localBranches' | 'remoteBranches' | 'stashes' | 'tags';
+export type GraphScrollMarkersAdditionalTypes =
+	| 'localBranches'
+	| 'remoteBranches'
+	| 'stashes'
+	| 'tags'
+	| 'pullRequests';
+export type GraphMinimapMarkersAdditionalTypes =
+	| 'localBranches'
+	| 'remoteBranches'
+	| 'stashes'
+	| 'tags'
+	| 'pullRequests';
 export type GravatarDefaultStyle = 'wavatar' | 'identicon' | 'monsterid' | 'mp' | 'retro' | 'robohash';
 export type HeatmapLocations = 'gutter' | 'line' | 'overview';
 export type KeyMap = 'alternate' | 'chorded' | 'none';
@@ -371,27 +388,28 @@ export interface GraphConfig {
 	readonly dateStyle: DateStyle | null;
 	readonly defaultItemLimit: number;
 	readonly dimMergeCommits: boolean;
+	readonly highlightRowsOnRefHover: boolean;
+	readonly layout: 'editor' | 'panel';
 	readonly minimap: {
 		readonly enabled: boolean;
 		readonly dataType: 'commits' | 'lines';
 		readonly additionalTypes: GraphMinimapMarkersAdditionalTypes[];
 	};
-	readonly highlightRowsOnRefHover: boolean;
-	readonly layout: 'editor' | 'panel';
-	readonly scrollRowPadding: number;
-	readonly showDetailsView: 'open' | 'selection' | false;
-	readonly showGhostRefsOnRowHover: boolean;
+	readonly onlyFollowFirstParent: boolean;
+	readonly pageItemLimit: number;
+	readonly pullRequests: {
+		readonly enabled: boolean;
+	};
 	readonly scrollMarkers: {
 		readonly enabled: boolean;
 		readonly additionalTypes: GraphScrollMarkersAdditionalTypes[];
 	};
-	readonly pullRequests: {
-		readonly enabled: boolean;
-	};
+	readonly scrollRowPadding: number;
+	readonly searchItemLimit: number;
+	readonly showDetailsView: 'open' | 'selection' | false;
+	readonly showGhostRefsOnRowHover: boolean;
 	readonly showRemoteNames: boolean;
 	readonly showUpstreamStatus: boolean;
-	readonly pageItemLimit: number;
-	readonly searchItemLimit: number;
 	readonly statusBar: {
 		readonly enabled: boolean;
 	};
@@ -588,6 +606,7 @@ export interface ViewsCommonConfig {
 		readonly stashes: {
 			readonly label: string;
 			readonly description: string;
+			readonly tooltip: string;
 		};
 	};
 	readonly openChangesInMultiDiffEditor: boolean;

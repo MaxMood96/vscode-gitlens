@@ -24,6 +24,13 @@ export interface CreatePatchEventDetail {
 	userSelections: DraftUserSelection[] | undefined;
 }
 
+export interface GenerateState {
+	cancelled?: boolean;
+	error?: { message: string };
+	title?: string;
+	description?: string;
+}
+
 @customElement('gl-inspect-patch')
 export class InspectPatch extends GlElement {
 	static override styles = [
@@ -31,6 +38,12 @@ export class InspectPatch extends GlElement {
 		css`
 			:host {
 				flex: 1;
+			}
+
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
 			}
 
 			a {
@@ -96,6 +109,7 @@ export class InspectPatch extends GlElement {
 			.message-input {
 				padding-top: 0.8rem;
 			}
+
 			.message-input__control {
 				flex: 1;
 				border: 1px solid var(--vscode-input-border);
@@ -108,6 +122,7 @@ export class InspectPatch extends GlElement {
 				color: var(--vscode-input-foreground);
 				font-family: inherit;
 			}
+
 			.message-input__control::placeholder {
 				color: var(--vscode-input-placeholderForeground);
 			}
@@ -120,6 +135,12 @@ export class InspectPatch extends GlElement {
 			.message-input__control:focus {
 				outline: 1px solid var(--vscode-focusBorder);
 				outline-offset: -1px;
+			}
+
+			.message-input__control:disabled {
+				opacity: 0.4;
+				cursor: not-allowed;
+				pointer-events: none;
 			}
 
 			.message-input__control--text {
@@ -170,11 +191,25 @@ export class InspectPatch extends GlElement {
 				padding-right: 2.4rem;
 			}
 
+			.message-input__menu {
+				position: absolute;
+				top: 0.8rem;
+				right: 0;
+			}
+
+			.section--action > :first-child .message-input__menu {
+				top: 0;
+			}
+
 			.message-input--group {
 				display: flex;
 				flex-direction: row;
 				align-items: stretch;
 				gap: 0.6rem;
+			}
+
+			.message-input--with-menu {
+				position: relative;
 			}
 
 			textarea.message-input__control {
@@ -227,6 +262,29 @@ export class InspectPatch extends GlElement {
 			.user-selection__check:not(.is-active) {
 				opacity: 0;
 			}
+
+			.alert {
+				display: flex;
+				flex-direction: row;
+				align-items: center;
+				padding: 0.8rem 1.2rem;
+				line-height: 1.2;
+				background-color: var(--color-alert-errorBackground);
+				border-left: 0.3rem solid var(--color-alert-errorBorder);
+				color: var(--color-alert-foreground);
+			}
+
+			.alert code-icon {
+				margin-right: 0.4rem;
+				vertical-align: baseline;
+			}
+
+			.alert__content {
+				font-size: 1.2rem;
+				line-height: 1.2;
+				text-align: left;
+				margin: 0;
+			}
 		`,
 	];
 
@@ -235,6 +293,9 @@ export class InspectPatch extends GlElement {
 
 	@property({ type: Object })
 	preferences?: Preferences;
+
+	@property({ type: Object })
+	generate?: GenerateState;
 
 	@property({ type: Object })
 	createState?: CreatePatchState;
@@ -250,6 +311,7 @@ export class InspectPatch extends GlElement {
 	override render() {
 		return html`<gl-patch-create
 			.state=${this.patchCreateState}
+			.generate=${this.generate}
 			review
 			@gl-patch-file-compare-working=${(e: CustomEvent) => {
 				console.log('gl-patch-file-compare-working', e);

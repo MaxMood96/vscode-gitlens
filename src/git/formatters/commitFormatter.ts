@@ -9,10 +9,10 @@ import type {
 import { getPresenceDataUri } from '../../avatars';
 import { Command } from '../../commands/base';
 import { DiffWithCommand } from '../../commands/diffWith';
+import { InspectCommand } from '../../commands/inspect';
 import { OpenCommitOnRemoteCommand } from '../../commands/openCommitOnRemote';
 import { OpenFileAtRevisionCommand } from '../../commands/openFileAtRevision';
 import { ConnectRemoteProviderCommand } from '../../commands/remoteProviders';
-import { ShowCommitsInViewCommand } from '../../commands/showCommitsInView';
 import type { ShowQuickCommitCommandArgs } from '../../commands/showQuickCommit';
 import { ShowQuickCommitFileCommand } from '../../commands/showQuickCommitFile';
 import type { DateStyle } from '../../config';
@@ -29,7 +29,7 @@ import { encodeHtmlWeak, escapeMarkdown, getSuperscript } from '../../system/str
 import type { ContactPresence } from '../../vsls/vsls';
 import type { PreviousLineComparisonUrisResult } from '../gitProvider';
 import type { GitCommit } from '../models/commit';
-import { isCommit } from '../models/commit';
+import { isCommit, isStash } from '../models/commit';
 import { uncommitted, uncommittedStaged } from '../models/constants';
 import { getIssueOrPullRequestMarkdownIcon } from '../models/issue';
 import type { PullRequest } from '../models/pullRequest';
@@ -367,10 +367,10 @@ export class CommitFormatter extends Formatter<GitCommit, CommitFormatOptions> {
 				commands = `[\`${this._padOrTruncate(
 					shortenRevision(isUncommittedStaged(diffUris.current.sha) ? diffUris.current.sha : uncommitted),
 					this._options.tokenOptions.commands,
-				)}\`](${ShowCommitsInViewCommand.getMarkdownCommandArgs(
+				)}\`](${InspectCommand.getMarkdownCommandArgs(
 					this._item.sha,
 					this._item.repoPath,
-				)} "Open Details")`;
+				)} "Inspect Commit Details")`;
 
 				commands += ` &nbsp;[$(chevron-left)$(compare-changes)](${DiffWithCommand.getMarkdownCommandArgs({
 					lhs: {
@@ -394,10 +394,10 @@ export class CommitFormatter extends Formatter<GitCommit, CommitFormatOptions> {
 				commands = `[\`${this._padOrTruncate(
 					shortenRevision(this._item.isUncommittedStaged ? uncommittedStaged : uncommitted),
 					this._options.tokenOptions.commands,
-				)}\`](${ShowCommitsInViewCommand.getMarkdownCommandArgs(
+				)}\`](${InspectCommand.getMarkdownCommandArgs(
 					this._item.sha,
 					this._item.repoPath,
-				)} "Open Details")`;
+				)} "Inspect Commit Details")`;
 			}
 
 			return commands;
@@ -405,10 +405,10 @@ export class CommitFormatter extends Formatter<GitCommit, CommitFormatOptions> {
 
 		const separator = ' &nbsp;&nbsp;|&nbsp;&nbsp; ';
 
-		commands = `---\n\n[\`$(git-commit) ${this.id}\`](${ShowCommitsInViewCommand.getMarkdownCommandArgs(
+		commands = `---\n\n[\`$(git-commit) ${this.id}\`](${InspectCommand.getMarkdownCommandArgs(
 			this._item.sha,
 			this._item.repoPath,
-		)} "Open Details")`;
+		)} "Inspect Commit Details")`;
 
 		commands += ` &nbsp;[$(chevron-left)$(compare-changes)](${DiffWithCommand.getMarkdownCommandArgs(
 			this._item,
@@ -585,28 +585,41 @@ export class CommitFormatter extends Formatter<GitCommit, CommitFormatOptions> {
 	}
 
 	get link(): string {
+		let icon;
+		let label;
+		if (isStash(this._item)) {
+			icon = 'archive';
+			label = this._padOrTruncate(
+				`Stash${this._item.number ? ` #${this._item.number}` : ''}`,
+				this._options.tokenOptions.link,
+			);
+		} else {
+			icon = this._item.sha != null && !this._item.isUncommitted ? 'git-commit' : '';
+			label = this._padOrTruncate(
+				shortenRevision(this._item.sha ?? '', { strings: { working: 'Working Tree' } }),
+				this._options.tokenOptions.id,
+			);
+		}
+
 		let link;
 		switch (this._options.outputFormat) {
-			case 'markdown': {
-				const sha = this._padOrTruncate(this._item.shortSha ?? '', this._options.tokenOptions.id);
-				link = `[\`$(git-commit) ${sha}\`](${ShowCommitsInViewCommand.getMarkdownCommandArgs(
-					this._item.sha,
-					this._item.repoPath,
-				)} "Open Details")`;
+			case 'markdown':
+				icon = icon ? `$(${icon}) ` : '';
+				link = `[\`${icon}${label}\`](${InspectCommand.getMarkdownCommandArgs({
+					ref: getReferenceFromRevision(this._item),
+				})} "Inspect Commit Details")`;
 				break;
-			}
-			case 'html': {
-				const sha = this._padOrTruncate(this._item.shortSha ?? '', this._options.tokenOptions.id);
-				link = /*html*/ `<a href="${ShowCommitsInViewCommand.getMarkdownCommandArgs(
-					this._item.sha,
-					this._item.repoPath,
-				)}" title="Open Details"${
+			case 'html':
+				icon = icon ? `<span class="codicon codicon-${icon}"></span>` : '';
+				link = /*html*/ `<a href="${InspectCommand.getMarkdownCommandArgs({
+					ref: getReferenceFromRevision(this._item),
+				})}" title="Inspect Commit Details"${
 					this._options.htmlFormat?.classes?.link ? ` class="${this._options.htmlFormat.classes.link}"` : ''
-				}><span class="codicon codicon-git-commit"></span>${sha}</a>`;
+				}>${icon}${label}</a>`;
 				break;
-			}
 			default:
-				return this.id;
+				link = this.id;
+				break;
 		}
 
 		return this._padOrTruncate(link, this._options.tokenOptions.link);

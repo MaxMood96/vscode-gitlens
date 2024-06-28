@@ -25,7 +25,7 @@ export class CloudIntegrationService {
 		if (!providersRsp.ok) {
 			const error = (await providersRsp.json())?.error;
 			if (error != null) {
-				Logger.error(`Failed to get connected providers from cloud: ${error}`);
+				Logger.error(`Failed to get connected providers from cloud: ${error.message}`);
 			}
 			return undefined;
 		}
@@ -35,23 +35,32 @@ export class CloudIntegrationService {
 
 	async getConnectionSession(
 		id: IntegrationId,
-		refresh: boolean = false,
+		refreshToken?: string,
 	): Promise<CloudIntegrationAuthenticationSession | undefined> {
+		const refresh = Boolean(refreshToken);
 		const cloudIntegrationType = toCloudIntegrationType[id];
 		if (cloudIntegrationType == null) {
 			Logger.error(`Unsupported cloud integration type: ${id}`);
 			return undefined;
 		}
+		const reqInitOptions = refreshToken
+			? {
+					method: 'POST',
+					body: JSON.stringify({
+						access_token: refreshToken,
+					}),
+			  }
+			: { method: 'GET' };
 
 		const tokenRsp = await this.connection.fetchGkDevApi(
 			`v1/provider-tokens/${cloudIntegrationType}${refresh ? '/refresh' : ''}`,
-			{ method: refresh ? 'POST' : 'GET' },
+			reqInitOptions,
 			{ organizationId: false },
 		);
 		if (!tokenRsp.ok) {
 			const error = (await tokenRsp.json())?.error;
 			if (error != null) {
-				Logger.error(`Failed to ${refresh ? 'refresh' : 'get'} ${id} token from cloud: ${error}`);
+				Logger.error(`Failed to ${refresh ? 'refresh' : 'get'} ${id} token from cloud: ${error.message}`);
 			}
 			return undefined;
 		}
@@ -86,7 +95,7 @@ export class CloudIntegrationService {
 		if (!authorizeRsp.ok) {
 			const error = (await authorizeRsp.json())?.error;
 			if (error != null) {
-				Logger.error(`Failed to authorize with ${id}: ${error}`);
+				Logger.error(`Failed to authorize with ${id}: ${error.message}`);
 			}
 			return undefined;
 		}

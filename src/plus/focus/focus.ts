@@ -19,9 +19,9 @@ import {
 	FeedbackQuickInputButton,
 	LaunchpadSettingsQuickInputButton,
 	MergeQuickInputButton,
-	OpenInEditorQuickInputButton,
 	OpenOnGitHubQuickInputButton,
 	OpenOnWebQuickInputButton,
+	OpenWorktreeInNewWindowQuickInputButton,
 	PinQuickInputButton,
 	RefreshQuickInputButton,
 	SnoozeQuickInputButton,
@@ -29,13 +29,12 @@ import {
 	UnsnoozeQuickInputButton,
 } from '../../commands/quickCommand.buttons';
 import type { LaunchpadTelemetryContext, Source, Sources, TelemetryEvents } from '../../constants';
-import { Commands, previewBadge } from '../../constants';
+import { previewBadge } from '../../constants';
 import type { Container } from '../../container';
 import type { QuickPickItemOfT } from '../../quickpicks/items/common';
 import { createQuickPickItemOfT, createQuickPickSeparator } from '../../quickpicks/items/common';
 import type { DirectiveQuickPickItem } from '../../quickpicks/items/directive';
 import { createDirectiveQuickPickItem, Directive } from '../../quickpicks/items/directive';
-import { executeCommand } from '../../system/command';
 import { getScopedCounter } from '../../system/counter';
 import { fromNow } from '../../system/date';
 import { interpolate, pluralize } from '../../system/string';
@@ -46,9 +45,19 @@ import {
 	ProviderBuildStatusState,
 	ProviderPullRequestReviewState,
 } from '../integrations/providers/models';
-import type { FocusAction, FocusActionCategory, FocusGroup, FocusItem, FocusTargetAction } from './focusProvider';
+import type {
+	FocusAction,
+	FocusActionCategory,
+	FocusCategorizedResult,
+	FocusGroup,
+	FocusItem,
+	FocusTargetAction,
+} from './focusProvider';
 import {
 	countFocusItemGroups,
+	focusGroupIconMap,
+	focusGroupLabelMap,
+	focusGroups,
 	getFocusItemIdHash,
 	groupAndSortFocusItems,
 	supportedFocusIntegrations,
@@ -68,27 +77,12 @@ const actionGroupMap = new Map<FocusActionCategory, string[]>([
 	['other', ['Other', `Opened by \${author} \${createdDateRelative}`]],
 ]);
 
-const groupMap = new Map<FocusGroup, [string, string | undefined]>([
-	['current-branch', ['Current Branch', 'git-branch']],
-	['pinned', ['Pinned', 'pinned']],
-	['mergeable', ['Ready to Merge', 'rocket']],
-	['blocked', ['Blocked', 'error']], //bracket-error
-	['follow-up', ['Requires Follow-up', 'report']],
-	// ['needs-attention', ['Needs Your Attention', 'bell-dot']], //comment-unresolved
-	['needs-review', ['Needs Your Review', 'comment-unresolved']], // feedback
-	['waiting-for-review', ['Waiting for Review', 'gitlens-clock']],
-	['draft', ['Draft', 'git-pull-request-draft']],
-	['other', ['Other', 'ellipsis']],
-	['snoozed', ['Snoozed', 'bell-slash']],
-]);
-
 export interface FocusItemQuickPickItem extends QuickPickItemOfT<FocusItem> {
 	group: FocusGroup;
 }
 
 interface Context {
-	items: FocusItem[];
-	itemsError?: Error;
+	result: FocusCategorizedResult;
 
 	title: string;
 	collapsed: Map<FocusGroup, boolean>;
@@ -187,14 +181,13 @@ export class FocusCommand extends QuickCommand<State> {
 		const collapsed = new Map<FocusGroup, boolean>(storedCollapsed.map(g => [g, true]));
 		if (state.initialGroup != null) {
 			// set all to true except the initial group
-			for (const [group] of groupMap) {
+			for (const group of focusGroups) {
 				collapsed.set(group, group !== state.initialGroup);
 			}
 		}
 
 		const context: Context = {
-			items: [],
-			itemsError: undefined,
+			result: { items: [] },
 			title: this.title,
 			collapsed: collapsed,
 			telemetryContext: this.telemetryContext,
@@ -291,9 +284,12 @@ export class FocusCommand extends QuickCommand<State> {
 					case 'show-overview':
 						void this.container.focus.switchTo(state.item);
 						break;
+					case 'open-worktree':
+						void this.container.focus.switchTo(state.item, { skipWorktreeConfirmations: true });
+						break;
 					case 'switch-and-code-suggest':
 					case 'code-suggest':
-						void this.container.focus.switchTo(state.item, true);
+						void this.container.focus.switchTo(state.item, { startCodeSuggestion: true });
 						break;
 					case 'open-changes':
 						void this.container.focus.openChanges(state.item);
@@ -322,11 +318,11 @@ export class FocusCommand extends QuickCommand<State> {
 		context: Context,
 		{ picked, selectTopItem }: { picked?: string; selectTopItem?: boolean },
 	): StepResultGenerator<GroupedFocusItem> {
-		const getItems = (categorizedItems: FocusItem[]) => {
+		const getItems = (result: FocusCategorizedResult) => {
 			const items: (FocusItemQuickPickItem | DirectiveQuickPickItem)[] = [];
 
-			if (categorizedItems?.length) {
-				const uiGroups = groupAndSortFocusItems(categorizedItems);
+			if (result.items?.length) {
+				const uiGroups = groupAndSortFocusItems(result.items);
 				const topItem: FocusItem | undefined =
 					!selectTopItem || picked != null
 						? undefined
@@ -340,9 +336,11 @@ export class FocusCommand extends QuickCommand<State> {
 					items.push(
 						createQuickPickSeparator(groupItems.length ? groupItems.length.toString() : undefined),
 						createDirectiveQuickPickItem(Directive.Reload, false, {
-							label: `$(${context.collapsed.get(ui) ? 'chevron-down' : 'chevron-up'})\u00a0\u00a0$(${
-								groupMap.get(ui)![1]
-							})\u00a0\u00a0${groupMap.get(ui)![0]?.toUpperCase()}`, //'\u00a0',
+							label: `$(${
+								context.collapsed.get(ui) ? 'chevron-down' : 'chevron-up'
+							})\u00a0\u00a0${focusGroupIconMap.get(ui)!}\u00a0\u00a0${focusGroupLabelMap
+								.get(ui)
+								?.toUpperCase()}`, //'\u00a0',
 							//detail: groupMap.get(group)?.[0].toUpperCase(),
 							onDidSelect: () => {
 								const collapsed = !context.collapsed.get(ui);
@@ -383,11 +381,16 @@ export class FocusCommand extends QuickCommand<State> {
 							buttons.push(
 								i.viewer.pinned ? UnpinQuickInputButton : PinQuickInputButton,
 								i.viewer.snoozed ? UnsnoozeQuickInputButton : SnoozeQuickInputButton,
-								OpenOnGitHubQuickInputButton,
 							);
 
+							if (!i.openRepository?.localBranch?.current) {
+								buttons.push(OpenWorktreeInNewWindowQuickInputButton);
+							}
+
+							buttons.push(OpenOnGitHubQuickInputButton);
+
 							return {
-								label: i.title,
+								label: i.title.length > 60 ? `${i.title.substring(0, 60)}...` : i.title,
 								// description: `${i.repoAndOwner}#${i.id}, by @${i.author}`,
 								description: `\u00a0 ${i.repository.owner.login}/${i.repository.name}#${i.id} \u00a0 ${
 									i.codeSuggestionsCount > 0
@@ -415,14 +418,14 @@ export class FocusCommand extends QuickCommand<State> {
 		};
 
 		function getItemsAndPlaceholder() {
-			if (context.itemsError != null) {
+			if (context.result.error != null) {
 				return {
-					placeholder: `Unable to load items (${String(context.itemsError)})`,
+					placeholder: `Unable to load items (${String(context.result.error)})`,
 					items: [createDirectiveQuickPickItem(Directive.Cancel, undefined, { label: 'OK' })],
 				};
 			}
 
-			if (!context.items.length) {
+			if (!context.result.items.length) {
 				return {
 					placeholder: 'All done! Take a vacation',
 					items: [createDirectiveQuickPickItem(Directive.Cancel, undefined, { label: 'OK' })],
@@ -431,7 +434,7 @@ export class FocusCommand extends QuickCommand<State> {
 
 			return {
 				placeholder: 'Choose an item to focus on',
-				items: getItems(context.items),
+				items: getItems(context.result),
 			};
 		}
 
@@ -458,7 +461,7 @@ export class FocusCommand extends QuickCommand<State> {
 			items: items,
 			buttons: [
 				FeedbackQuickInputButton,
-				OpenInEditorQuickInputButton,
+				OpenOnWebQuickInputButton,
 				LaunchpadSettingsQuickInputButton,
 				RefreshQuickInputButton,
 			],
@@ -475,9 +478,9 @@ export class FocusCommand extends QuickCommand<State> {
 						void openUrl('https://github.com/gitkraken/vscode-gitlens/discussions/3286');
 						break;
 
-					case OpenInEditorQuickInputButton:
-						this.sendTitleActionTelemetry('open-in-editor', context);
-						void executeCommand(Commands.ShowFocusPage);
+					case OpenOnWebQuickInputButton:
+						this.sendTitleActionTelemetry('open-on-gkdev', context);
+						void openUrl(this.container.focus.generateWebUrl());
 						break;
 					case RefreshQuickInputButton:
 						this.sendTitleActionTelemetry('refresh', context);
@@ -516,6 +519,11 @@ export class FocusCommand extends QuickCommand<State> {
 					case MergeQuickInputButton:
 						this.sendItemActionTelemetry('merge', item, group, context);
 						await this.container.focus.merge(item);
+						break;
+
+					case OpenWorktreeInNewWindowQuickInputButton:
+						this.sendItemActionTelemetry('open-worktree', item, group, context);
+						await this.container.focus.switchTo(item, { skipWorktreeConfirmations: true });
 						break;
 				}
 
@@ -584,6 +592,7 @@ export class FocusCommand extends QuickCommand<State> {
 							{
 								label: 'Merge...',
 								detail: `Will merge ${from}${into}`,
+								buttons: [OpenOnGitHubQuickInputButton],
 							},
 							action,
 						),
@@ -595,6 +604,7 @@ export class FocusCommand extends QuickCommand<State> {
 						createQuickPickItemOfT(
 							{
 								label: `${this.getOpenActionLabel(state.item.actionableCategory)} on GitHub`,
+								buttons: [OpenOnGitHubQuickInputButton],
 							},
 							action,
 						),
@@ -606,6 +616,17 @@ export class FocusCommand extends QuickCommand<State> {
 							{
 								label: 'Switch to Branch or Worktree',
 								detail: 'Will checkout the branch, create or open a worktree',
+							},
+							action,
+						),
+					);
+					break;
+				case 'open-worktree':
+					confirmations.push(
+						createQuickPickItemOfT(
+							{
+								label: 'Open Worktree in New Window',
+								detail: 'Will create or open a worktree in a new window',
 							},
 							action,
 						),
@@ -768,7 +789,7 @@ export class FocusCommand extends QuickCommand<State> {
 				break;
 		}
 
-		if (item.codeSuggestions != null && item.codeSuggestions.length > 0) {
+		if (item.codeSuggestions?.value != null && item.codeSuggestions.value.length > 0) {
 			if (information.length > 0) {
 				information.push(createDirectiveQuickPickItem(Directive.Noop, false, { label: '' }));
 			}
@@ -808,12 +829,17 @@ export class FocusCommand extends QuickCommand<State> {
 			status = `$(pass) No conflicts`;
 		}
 
-		return createQuickPickItemOfT({ label: status }, 'soft-open');
+		return createQuickPickItemOfT({ label: status, buttons: [OpenOnGitHubQuickInputButton] }, 'soft-open');
 	}
 
 	private getFocusItemReviewInformation(item: FocusItem): QuickPickItemOfT<FocusAction>[] {
 		if (item.reviews == null || item.reviews.length === 0) {
-			return [createQuickPickItemOfT({ label: `$(info) No reviewers have been assigned` }, 'soft-open')];
+			return [
+				createQuickPickItemOfT(
+					{ label: `$(info) No reviewers have been assigned`, buttons: [OpenOnGitHubQuickInputButton] },
+					'soft-open',
+				),
+			];
 		}
 
 		const reviewInfo: QuickPickItemOfT<FocusAction>[] = [];
@@ -840,7 +866,12 @@ export class FocusCommand extends QuickCommand<State> {
 			}
 
 			if (reviewLabel != null) {
-				reviewInfo.push(createQuickPickItemOfT({ label: reviewLabel, iconPath: iconPath }, 'soft-open'));
+				reviewInfo.push(
+					createQuickPickItemOfT(
+						{ label: reviewLabel, iconPath: iconPath, buttons: [OpenOnGitHubQuickInputButton] },
+						'soft-open',
+					),
+				);
 			}
 		}
 
@@ -850,17 +881,17 @@ export class FocusCommand extends QuickCommand<State> {
 	private getFocusItemCodeSuggestionInformation(
 		item: FocusItem,
 	): (QuickPickItemOfT<FocusTargetAction> | DirectiveQuickPickItem)[] {
-		if (item.codeSuggestions == null || item.codeSuggestions.length === 0) {
+		if (item.codeSuggestions?.value == null || item.codeSuggestions.value.length === 0) {
 			return [];
 		}
 
 		const codeSuggestionInfo: (QuickPickItemOfT<FocusTargetAction> | DirectiveQuickPickItem)[] = [
 			createDirectiveQuickPickItem(Directive.Noop, false, {
-				label: `$(gitlens-code-suggestion) ${pluralize('code suggestion', item.codeSuggestions.length)}`,
+				label: `$(gitlens-code-suggestion) ${pluralize('code suggestion', item.codeSuggestions.value.length)}`,
 			}),
 		];
 
-		for (const suggestion of item.codeSuggestions) {
+		for (const suggestion of item.codeSuggestions.value) {
 			codeSuggestionInfo.push(
 				createQuickPickItemOfT(
 					{
@@ -998,13 +1029,7 @@ export class FocusCommand extends QuickCommand<State> {
 }
 
 async function updateContextItems(container: Container, context: Context, options?: { force?: boolean }) {
-	try {
-		context.items = await container.focus.getCategorizedItems(options);
-		context.itemsError = undefined;
-	} catch (ex) {
-		context.items = [];
-		context.itemsError = ex;
-	}
+	context.result = await container.focus.getCategorizedItems(options);
 	if (container.telemetry.enabled) {
 		updateTelemetryContext(context);
 	}
@@ -1013,17 +1038,28 @@ async function updateContextItems(container: Container, context: Context, option
 function updateTelemetryContext(context: Context) {
 	if (context.telemetryContext == null) return;
 
-	const grouped = countFocusItemGroups(context.items);
+	let updatedContext: NonNullable<(typeof context)['telemetryContext']>;
+	if (context.result.error != null) {
+		updatedContext = {
+			...context.telemetryContext,
+			'items.error': String(context.result.error),
+		};
+	} else {
+		const grouped = countFocusItemGroups(context.result.items);
 
-	const updatedContext: NonNullable<(typeof context)['telemetryContext']> = {
-		...context.telemetryContext,
-		'items.count': context.items.length,
-		'groups.count': grouped.size,
-	};
+		updatedContext = {
+			...context.telemetryContext,
+			'items.count': context.result.items.length,
+			'items.timings.prs': context.result.timings?.prs,
+			'items.timings.codeSuggestionCounts': context.result.timings?.codeSuggestionCounts,
+			'items.timings.enrichedItems': context.result.timings?.enrichedItems,
+			'groups.count': grouped.size,
+		};
 
-	for (const [group, count] of grouped) {
-		updatedContext[`groups.${group}.count`] = count;
-		updatedContext[`groups.${group}.collapsed`] = context.collapsed.get(group);
+		for (const [group, count] of grouped) {
+			updatedContext[`groups.${group}.count`] = count;
+			updatedContext[`groups.${group}.collapsed`] = context.collapsed.get(group);
+		}
 	}
 
 	context.telemetryContext = updatedContext;

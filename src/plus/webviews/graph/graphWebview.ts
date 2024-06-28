@@ -1,4 +1,4 @@
-import type { ColorTheme, ConfigurationChangeEvent, Uri } from 'vscode';
+import type { CancellationToken, ColorTheme, ConfigurationChangeEvent, Uri } from 'vscode';
 import { CancellationTokenSource, Disposable, env, window } from 'vscode';
 import type { CreatePullRequestActionContext, OpenPullRequestActionContext } from '../../../api/gitlens';
 import { getAvatarUri } from '../../../avatars';
@@ -6,10 +6,10 @@ import { parseCommandContext } from '../../../commands/base';
 import type { CopyDeepLinkCommandArgs } from '../../../commands/copyDeepLink';
 import type { CopyMessageToClipboardCommandArgs } from '../../../commands/copyMessageToClipboard';
 import type { CopyShaToClipboardCommandArgs } from '../../../commands/copyShaToClipboard';
+import type { InspectCommandArgs } from '../../../commands/inspect';
 import type { OpenOnRemoteCommandArgs } from '../../../commands/openOnRemote';
 import type { OpenPullRequestOnRemoteCommandArgs } from '../../../commands/openPullRequestOnRemote';
 import type { CreatePatchCommandArgs } from '../../../commands/patches';
-import type { ShowCommitsInViewCommandArgs } from '../../../commands/showCommitsInView';
 import type { Config, GraphMinimapMarkersAdditionalTypes, GraphScrollMarkersAdditionalTypes } from '../../../config';
 import type { StoredGraphFilters, StoredGraphIncludeOnlyRef, StoredGraphRefType } from '../../../constants';
 import { Commands, GlyphChars } from '../../../constants';
@@ -36,11 +36,14 @@ import * as StashActions from '../../../git/actions/stash';
 import * as TagActions from '../../../git/actions/tag';
 import * as WorktreeActions from '../../../git/actions/worktree';
 import { GitSearchError } from '../../../git/errors';
+import { CommitFormatter } from '../../../git/formatters/commitFormatter';
 import { getBranchId, getBranchNameWithoutRemote, getRemoteNameFromBranchName } from '../../../git/models/branch';
 import type { GitCommit } from '../../../git/models/commit';
+import { isStash } from '../../../git/models/commit';
 import { uncommitted } from '../../../git/models/constants';
 import { GitContributor } from '../../../git/models/contributor';
 import type { GitGraph, GitGraphRowType } from '../../../git/models/graph';
+import { getGkProviderThemeIconString } from '../../../git/models/graph';
 import { getComparisonRefsForPullRequest, serializePullRequest } from '../../../git/models/pullRequest';
 import type {
 	GitBranchReference,
@@ -77,7 +80,7 @@ import type { Deferrable } from '../../../system/function';
 import { debounce, disposableInterval } from '../../../system/function';
 import { find, last, map } from '../../../system/iterable';
 import { updateRecordValue } from '../../../system/object';
-import { getSettledValue } from '../../../system/promise';
+import { getSettledValue, pauseOnCancelOrTimeoutMapTuplePromise } from '../../../system/promise';
 import { isDarkTheme, isLightTheme } from '../../../system/utils';
 import { isWebviewItemContext, isWebviewItemGroupContext, serializeWebviewItemContext } from '../../../system/webview';
 import { RepositoryFolderNode } from '../../../views/nodes/abstract/repositoryFolderNode';
@@ -88,6 +91,7 @@ import { isSerializedState } from '../../../webviews/webviewsController';
 import type { SubscriptionChangeEvent } from '../../gk/account/subscriptionService';
 import type {
 	BranchState,
+	DidGetRowHoverParams,
 	DidSearchParams,
 	DoubleClickedParams,
 	GetMissingAvatarsParams,
@@ -131,7 +135,6 @@ import type {
 	SearchParams,
 	State,
 	UpdateColumnsParams,
-	UpdateDimMergeCommitsParams,
 	UpdateExcludeTypeParams,
 	UpdateGraphConfigurationParams,
 	UpdateRefsVisibilityParams,
@@ -158,12 +161,12 @@ import {
 	GetMissingAvatarsCommand,
 	GetMissingRefsMetadataCommand,
 	GetMoreRowsCommand,
+	GetRowHoverRequest,
 	OpenPullRequestDetailsCommand,
 	SearchOpenInViewCommand,
 	SearchRequest,
 	supportedRefMetadataTypes,
 	UpdateColumnsCommand,
-	UpdateDimMergeCommitsCommand,
 	UpdateExcludeTypeCommand,
 	UpdateGraphConfigurationCommand,
 	UpdateIncludeOnlyRefsCommand,
@@ -224,6 +227,9 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 	private _etagRepository?: number;
 	private _firstSelection = true;
 	private _graph?: GitGraph;
+	private _hoverCache = new Map<string, Promise<string | undefined>>();
+	private _hoverCancellation: CancellationTokenSource | undefined;
+
 	private readonly _ipcNotificationMap = new Map<IpcNotification<any>, () => Promise<boolean>>([
 		[DidChangeColumnsNotification, this.notifyDidChangeColumns],
 		[DidChangeGraphConfigurationNotification, this.notifyDidChangeConfiguration],
@@ -533,6 +539,12 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			this.host.registerWebviewCommand('gitlens.graph.scrollMarkerTagOff', () =>
 				this.toggleScrollMarker('tags', false),
 			),
+			this.host.registerWebviewCommand('gitlens.graph.scrollMarkerPullRequestOn', () =>
+				this.toggleScrollMarker('pullRequests', true),
+			),
+			this.host.registerWebviewCommand('gitlens.graph.scrollMarkerPullRequestOff', () =>
+				this.toggleScrollMarker('pullRequests', false),
+			),
 
 			this.host.registerWebviewCommand('gitlens.graph.copyDeepLinkToBranch', this.copyDeepLinkToBranch),
 			this.host.registerWebviewCommand('gitlens.graph.copyDeepLinkToCommit', this.copyDeepLinkToCommit),
@@ -616,9 +628,6 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			case ChooseRepositoryCommand.is(e):
 				void this.onChooseRepository();
 				break;
-			case UpdateDimMergeCommitsCommand.is(e):
-				this.dimMergeCommits(e.params);
-				break;
 			case DoubleClickedCommandType.is(e):
 				void this.onDoubleClick(e.params);
 				break;
@@ -633,6 +642,9 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 				break;
 			case GetMoreRowsCommand.is(e):
 				void this.onGetMoreRows(e.params);
+				break;
+			case GetRowHoverRequest.is(e):
+				void this.onHoverRowRequest(GetRowHoverRequest, e);
 				break;
 			case OpenPullRequestDetailsCommand.is(e):
 				void this.onOpenPullRequestDetails(e.params);
@@ -687,6 +699,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 								case 'remoteBranches':
 								case 'stashes':
 								case 'tags':
+								case 'pullRequests':
 									additionalTypes.push(marker);
 									break;
 							}
@@ -694,6 +707,12 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 						void configuration.updateEffective('graph.minimap.additionalTypes', additionalTypes);
 						break;
 					}
+					case 'dimMergeCommits':
+						void configuration.updateEffective('graph.dimMergeCommits', params.changes[key]);
+						break;
+					case 'onlyFollowFirstParent':
+						void configuration.updateEffective('graph.onlyFollowFirstParent', params.changes[key]);
+						break;
 					default:
 						// TODO:@eamodio add more config options as needed
 						debugger;
@@ -748,30 +767,17 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			configuration.changed(e, 'defaultDateFormat') ||
 			configuration.changed(e, 'defaultDateStyle') ||
 			configuration.changed(e, 'advanced.abbreviatedShaLength') ||
-			configuration.changed(e, 'graph.avatars') ||
-			configuration.changed(e, 'graph.dateFormat') ||
-			configuration.changed(e, 'graph.dateStyle') ||
-			configuration.changed(e, 'graph.dimMergeCommits') ||
-			configuration.changed(e, 'graph.highlightRowsOnRefHover') ||
-			configuration.changed(e, 'graph.scrollRowPadding') ||
-			configuration.changed(e, 'graph.scrollMarkers.enabled') ||
-			configuration.changed(e, 'graph.scrollMarkers.additionalTypes') ||
-			configuration.changed(e, 'graph.showGhostRefsOnRowHover') ||
-			configuration.changed(e, 'graph.pullRequests.enabled') ||
-			configuration.changed(e, 'graph.showRemoteNames') ||
-			configuration.changed(e, 'graph.showUpstreamStatus') ||
-			configuration.changed(e, 'graph.minimap.enabled') ||
-			configuration.changed(e, 'graph.minimap.dataType') ||
-			configuration.changed(e, 'graph.minimap.additionalTypes')
+			configuration.changed(e, 'graph')
 		) {
 			void this.notifyDidChangeConfiguration();
 
 			if (
-				(configuration.changed(e, 'graph.minimap.enabled') ||
+				configuration.changed(e, 'graph.onlyFollowFirstParent') ||
+				((configuration.changed(e, 'graph.minimap.enabled') ||
 					configuration.changed(e, 'graph.minimap.dataType')) &&
-				configuration.get('graph.minimap.enabled') &&
-				configuration.get('graph.minimap.dataType') === 'lines' &&
-				!this._graph?.includes?.stats
+					configuration.get('graph.minimap.enabled') &&
+					configuration.get('graph.minimap.dataType') === 'lines' &&
+					!this._graph?.includes?.stats)
 			) {
 				this.updateState();
 			}
@@ -831,10 +837,6 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 
 		this._theme = theme;
 		this.updateState();
-	}
-
-	private dimMergeCommits(e: UpdateDimMergeCommitsParams) {
-		void configuration.updateEffective('graph.dimMergeCommits', e.dim);
 	}
 
 	private onColumnsChanged(e: UpdateColumnsParams) {
@@ -912,6 +914,152 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 		return Promise.resolve();
 	}
 
+	private async onHoverRowRequest<T extends typeof GetRowHoverRequest>(requestType: T, msg: IpcCallMessageType<T>) {
+		const hover: DidGetRowHoverParams = {
+			id: msg.params.id,
+			markdown: undefined,
+		};
+
+		if (this._hoverCancellation != null) {
+			this._hoverCancellation.cancel();
+		}
+
+		if (this._graph != null) {
+			const id = msg.params.id;
+
+			let markdown = this._hoverCache.get(id);
+			if (markdown == null) {
+				const cancellation = new CancellationTokenSource();
+				this._hoverCancellation = cancellation;
+
+				let cache = true;
+				let commit;
+				switch (msg.params.type) {
+					case 'work-dir-changes':
+						cache = false;
+						commit = await this.container.git.getCommit(this._graph.repoPath, uncommitted);
+						break;
+					case 'stash-node': {
+						const stash = await this.container.git.getStash(this._graph.repoPath);
+						commit = stash?.commits.get(msg.params.id);
+						break;
+					}
+					default: {
+						commit = await this.container.git.getCommit(this._graph.repoPath, msg.params.id);
+						break;
+					}
+				}
+
+				if (commit != null && !cancellation.token.isCancellationRequested) {
+					// Check if we have calculated stats for the row and if so apply it to the commit
+					const stats = this._graph.rowsStats?.get(commit.sha);
+					if (stats != null) {
+						commit = commit.with({
+							stats: {
+								...commit.stats,
+								additions: stats.additions,
+								deletions: stats.deletions,
+								// If `changedFiles` already exists, then use it, otherwise use the files count
+								changedFiles: commit.stats?.changedFiles ? commit.stats.changedFiles : stats.files,
+							},
+						});
+					}
+
+					markdown = this.getCommitTooltip(commit, cancellation.token).catch(() => {
+						this._hoverCache.delete(id);
+						return undefined;
+					});
+					if (cache) {
+						this._hoverCache.set(id, markdown);
+					}
+				}
+			}
+
+			if (markdown != null) {
+				hover.markdown = await markdown;
+			}
+		}
+
+		void this.host.respond(requestType, msg, hover);
+	}
+
+	private async getCommitTooltip(commit: GitCommit, cancellation: CancellationToken) {
+		const [remotesResult, _] = await Promise.allSettled([
+			this.container.git.getBestRemotesWithProviders(commit.repoPath),
+			commit.ensureFullDetails(),
+		]);
+
+		if (cancellation.isCancellationRequested) throw new CancellationError();
+
+		const remotes = getSettledValue(remotesResult, []);
+		const [remote] = remotes;
+
+		let enrichedAutolinks;
+		let pr;
+
+		if (remote?.hasIntegration()) {
+			const [enrichedAutolinksResult, prResult] = await Promise.allSettled([
+				pauseOnCancelOrTimeoutMapTuplePromise(commit.getEnrichedAutolinks(remote), cancellation),
+				commit.getAssociatedPullRequest(remote),
+			]);
+
+			if (cancellation.isCancellationRequested) throw new CancellationError();
+
+			const enrichedAutolinksMaybeResult = getSettledValue(enrichedAutolinksResult);
+			if (!enrichedAutolinksMaybeResult?.paused) {
+				enrichedAutolinks = enrichedAutolinksMaybeResult?.value;
+			}
+			pr = getSettledValue(prResult);
+		}
+
+		let template;
+		if (isStash(commit)) {
+			template = configuration.get('views.formats.stashes.tooltip');
+		} else {
+			template = configuration.get('views.formats.commits.tooltip');
+		}
+
+		const tooltip = await CommitFormatter.fromTemplateAsync(template, commit, {
+			enrichedAutolinks: enrichedAutolinks,
+			dateFormat: configuration.get('defaultDateFormat'),
+			getBranchAndTagTips: this.getBranchAndTagTips.bind(this),
+			messageAutolinks: true,
+			messageIndent: 4,
+			pullRequest: pr,
+			outputFormat: 'markdown',
+			remotes: remotes,
+			// unpublished: this.unpublished,
+		});
+
+		return tooltip;
+	}
+
+	private getBranchAndTagTips(sha: string, options?: { compact?: boolean; icons?: boolean }): string | undefined {
+		if (this._graph == null) return undefined;
+
+		const row = this._graph.rows.find(r => r.sha === sha);
+		if (row == null) return undefined;
+
+		const tips = [];
+		if (row.heads?.length) {
+			tips.push(...row.heads.map(h => (options?.icons ? `$(git-branch) ${h.name}` : h.name)));
+		}
+
+		if (row.remotes?.length) {
+			tips.push(
+				...row.remotes.map(h => {
+					const name = `${h.owner ? `${h.owner}/` : ''}${h.name}`;
+					return options?.icons ? `$(${getGkProviderThemeIconString(h.hostingServiceType)}) ${name}` : name;
+				}),
+			);
+		}
+		if (row.tags?.length) {
+			tips.push(...row.tags.map(h => (options?.icons ? `$(tag) ${h.name}` : h.name)));
+		}
+
+		return tips.join(', ') || undefined;
+	}
+
 	@debug()
 	private async onEnsureRowRequest<T extends typeof EnsureRowRequest>(requestType: T, msg: IpcCallMessageType<T>) {
 		if (this._graph == null) return;
@@ -961,7 +1109,13 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 	}
 
 	private async onGetMissingRefMetadata(e: GetMissingRefsMetadataParams) {
-		if (this._graph == null || this._refsMetadata === null || !getContext('gitlens:hasConnectedRemotes')) return;
+		if (
+			this._graph == null ||
+			this._refsMetadata === null ||
+			!getContext('gitlens:repos:withHostingIntegrationsConnected')?.includes(this._graph.repoPath)
+		) {
+			return;
+		}
 
 		const repoPath = this._graph.repoPath;
 
@@ -1565,7 +1719,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			repo.watchFileSystem(1000),
 			repo.onDidChangeFileSystem(this.onRepositoryFileSystemChanged, this),
 			onDidChangeContext(key => {
-				if (key !== 'gitlens:hasConnectedRemotes') return;
+				if (key !== 'gitlens:repos:withHostingIntegrationsConnected') return;
 
 				this.resetRefsMetadata();
 				this.updateRefsMetadata();
@@ -1821,6 +1975,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 				'remoteBranches',
 				'stashes',
 				'tags',
+				'pullRequests',
 			];
 			const enabledScrollMarkerTypes = configuration.get('graph.scrollMarkers.additionalTypes');
 			for (const type of configurableScrollMarkerTypes) {
@@ -1846,6 +2001,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			minimap: configuration.get('graph.minimap.enabled'),
 			minimapDataType: configuration.get('graph.minimap.dataType'),
 			minimapMarkerTypes: this.getMinimapMarkerTypes(),
+			onlyFollowFirstParent: configuration.get('graph.onlyFollowFirstParent'),
 			scrollRowPadding: configuration.get('graph.scrollRowPadding'),
 			scrollMarkerTypes: this.getScrollMarkerTypes(),
 			showGhostRefsOnRowHover: configuration.get('graph.showGhostRefsOnRowHover'),
@@ -2156,8 +2312,14 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 		void this.notifyDidChangeRefsVisibility();
 	}
 
+	private resetHoverCache() {
+		this._hoverCache.clear();
+		this._hoverCancellation?.dispose();
+		this._hoverCancellation = undefined;
+	}
+
 	private resetRefsMetadata(): null | undefined {
-		this._refsMetadata = getContext('gitlens:hasConnectedRemotes') ? undefined : null;
+		this._refsMetadata = getContext('gitlens:repos:withHostingIntegrationsConnected') ? undefined : null;
 		return this._refsMetadata;
 	}
 
@@ -2185,6 +2347,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 	private setGraph(graph: GitGraph | undefined) {
 		this._graph = graph;
 		if (graph == null) {
+			this.resetHoverCache();
 			this.resetRefsMetadata();
 			this.resetSearchState();
 		} else {
@@ -2409,10 +2572,7 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 			return void showGraphDetailsView(ref, { preserveFocus: true, preserveVisibility: false });
 		}
 
-		return executeCommand<ShowCommitsInViewCommandArgs>(Commands.ShowInDetailsView, {
-			repoPath: ref.repoPath,
-			refs: [ref.ref],
-		});
+		return executeCommand<InspectCommandArgs>(Commands.ShowInDetailsView, { ref: ref });
 	}
 
 	@log()

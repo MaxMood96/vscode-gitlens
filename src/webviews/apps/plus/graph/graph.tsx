@@ -38,11 +38,11 @@ import {
 	GetMissingAvatarsCommand,
 	GetMissingRefsMetadataCommand,
 	GetMoreRowsCommand,
+	GetRowHoverRequest,
 	OpenPullRequestDetailsCommand,
 	SearchOpenInViewCommand,
 	SearchRequest,
 	UpdateColumnsCommand,
-	UpdateDimMergeCommitsCommand,
 	UpdateExcludeTypeCommand,
 	UpdateGraphConfigurationCommand,
 	UpdateIncludeOnlyRefsCommand,
@@ -99,13 +99,13 @@ export class GraphApp extends App<State> {
 						settings => this.onColumnsChanged(settings),
 						250,
 					)}
-					onDimMergeCommits={dim => this.onDimMergeCommits(dim)}
 					onRefsVisibilityChange={(refs: GraphExcludedRef[], visible: boolean) =>
 						this.onRefsVisibilityChanged(refs, visible)
 					}
 					onChooseRepository={debounce<GraphApp['onChooseRepository']>(() => this.onChooseRepository(), 250)}
 					onDoubleClickRef={(ref, metadata) => this.onDoubleClickRef(ref, metadata)}
 					onDoubleClickRow={(row, preserveFocus) => this.onDoubleClickRow(row, preserveFocus)}
+					onHoverRowPromise={(row: GraphRow) => this.onHoverRowPromise(row)}
 					onMissingAvatars={(...params) => this.onGetMissingAvatars(...params)}
 					onMissingRefsMetadata={(...params) => this.onGetMissingRefsMetadata(...params)}
 					onMoreRows={(...params) => this.onGetMoreRows(...params)}
@@ -487,6 +487,10 @@ export class GraphApp extends App<State> {
 					'--color-graph-scroll-marker-selection',
 					computedStyle,
 				),
+				'--scroll-marker-pull-requests-color': getCssVariable(
+					'--color-graph-scroll-marker-pull-requests',
+					computedStyle,
+				),
 
 				'--stats-added-color': getCssVariable('--color-graph-stats-added', computedStyle),
 				'--stats-deleted-color': getCssVariable('--color-graph-stats-deleted', computedStyle),
@@ -529,12 +533,6 @@ export class GraphApp extends App<State> {
 		this.sendCommand(ChooseRepositoryCommand, undefined);
 	}
 
-	private onDimMergeCommits(dim: boolean) {
-		this.sendCommand(UpdateDimMergeCommitsCommand, {
-			dim: dim,
-		});
-	}
-
 	private onDoubleClickRef(ref: GraphRef, metadata?: GraphRefMetadataItem) {
 		this.sendCommand(DoubleClickedCommandType, {
 			type: 'ref',
@@ -549,6 +547,14 @@ export class GraphApp extends App<State> {
 			row: { id: row.sha, type: row.type as GitGraphRowType },
 			preserveFocus: preserveFocus,
 		});
+	}
+
+	private async onHoverRowPromise(row: GraphRow) {
+		try {
+			return await this.sendRequest(GetRowHoverRequest, { type: row.type as GitGraphRowType, id: row.sha });
+		} catch {
+			return undefined;
+		}
 	}
 
 	private onGetMissingAvatars(emails: GraphAvatars) {

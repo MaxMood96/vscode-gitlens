@@ -220,6 +220,8 @@ export class GitCommit implements GitRevisionReference {
 				this._files = this.file != null ? [this.file] : [];
 			}
 
+			this._recomputeStats = true;
+
 			return;
 		}
 
@@ -561,6 +563,7 @@ export class GitCommit implements GitRevisionReference {
 		parents?: string[];
 		files?: { file?: GitFileChange | null; files?: GitFileChange[] | null } | null;
 		lines?: GitCommitLine[];
+		stats?: GitCommitStats;
 	}): GitCommit {
 		let files;
 		if (changes.files != null) {
@@ -591,7 +594,7 @@ export class GitCommit implements GitRevisionReference {
 			this.getChangedValue(changes.parents, this.parents) ?? [],
 			this.message,
 			files,
-			this.stats,
+			this.getChangedValue(changes.stats, this.stats),
 			this.getChangedValue(changes.lines, this.lines),
 			this.tips,
 			this.stashName,

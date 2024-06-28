@@ -417,7 +417,7 @@ export class DeepLinkService implements Disposable {
 		const cancel: QuickPickItem = { label: 'Cancel' };
 		const result = await window.showQuickPick([add, cancel], {
 			title: `Locating Remote`,
-			placeHolder: `Unable to find remote for '${remoteUrl}', would you like to a new remote?`,
+			placeHolder: `Unable to find remote for '${remoteUrl}', would you like to add a new remote?`,
 		});
 		if (result !== add) return undefined;
 
@@ -885,6 +885,9 @@ export class DeepLinkService implements Disposable {
 								message = 'Failed to add remote.';
 								break;
 							}
+						} else {
+							action = DeepLinkServiceAction.DeepLinkCancelled;
+							break;
 						}
 					}
 
@@ -911,6 +914,9 @@ export class DeepLinkService implements Disposable {
 								message = 'Failed to add remote.';
 								break;
 							}
+						} else {
+							action = DeepLinkServiceAction.DeepLinkCancelled;
+							break;
 						}
 					}
 
@@ -920,9 +926,11 @@ export class DeepLinkService implements Disposable {
 
 					if (!remoteName && !secondaryRemoteName) {
 						action = DeepLinkServiceAction.DeepLinkCancelled;
+						break;
 					} else if (!this._context.remote) {
 						action = DeepLinkServiceAction.DeepLinkErrored;
 						message = 'Failed to add remote.';
+						break;
 					}
 
 					action = DeepLinkServiceAction.RemoteAdded;
@@ -1032,6 +1040,7 @@ export class DeepLinkService implements Disposable {
 						if (
 							this._context.action === DeepLinkActionType.Switch ||
 							this._context.action === DeepLinkActionType.SwitchToPullRequest ||
+							this._context.action === DeepLinkActionType.SwitchToPullRequestWorktree ||
 							this._context.action === DeepLinkActionType.SwitchToAndSuggestPullRequest
 						) {
 							action = DeepLinkServiceAction.OpenSwitch;
@@ -1052,6 +1061,7 @@ export class DeepLinkService implements Disposable {
 							if (
 								this._context.action === DeepLinkActionType.Switch ||
 								this._context.action === DeepLinkActionType.SwitchToPullRequest ||
+								this._context.action === DeepLinkActionType.SwitchToPullRequestWorktree ||
 								this._context.action === DeepLinkActionType.SwitchToAndSuggestPullRequest
 							) {
 								action = DeepLinkServiceAction.OpenSwitch;
@@ -1260,12 +1270,18 @@ export class DeepLinkService implements Disposable {
 
 						await executeGitCommand({
 							command: 'switch',
-							state: { repos: repo, reference: ref },
+							state: {
+								repos: repo,
+								reference: ref,
+								skipWorktreeConfirmations:
+									this._context.action === DeepLinkActionType.SwitchToPullRequestWorktree,
+							},
 						});
 					}
 
 					if (
 						this._context.action === DeepLinkActionType.SwitchToPullRequest ||
+						this._context.action === DeepLinkActionType.SwitchToPullRequestWorktree ||
 						this._context.action === DeepLinkActionType.SwitchToAndSuggestPullRequest
 					) {
 						await showInspectView({

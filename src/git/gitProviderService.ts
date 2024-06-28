@@ -69,7 +69,7 @@ import type { GitBranchReference, GitReference } from './models/reference';
 import { createRevisionRange, isSha, isUncommitted, isUncommittedParent } from './models/reference';
 import type { GitReflog } from './models/reflog';
 import type { GitRemote } from './models/remote';
-import { getVisibilityCacheKey } from './models/remote';
+import { getRemoteThemeIconString, getVisibilityCacheKey } from './models/remote';
 import type { RepositoryChangeEvent } from './models/repository';
 import { Repository, RepositoryChange, RepositoryChangeComparisonMode } from './models/repository';
 import type { GitStash } from './models/stash';
@@ -282,10 +282,7 @@ export class GitProviderService implements Disposable {
 	}
 
 	private registerCommands(): Disposable[] {
-		return [
-			registerCommand('gitlens.plus.resetRepositoryAccess', () => this.clearAllRepoVisibilityCaches()),
-			registerCommand('gitlens.plus.refreshRepositoryAccess', () => this.clearAllOpenRepoVisibilityCaches()),
-		];
+		return [registerCommand('gitlens.plus.refreshRepositoryAccess', () => this.clearAllOpenRepoVisibilityCaches())];
 	}
 
 	@debug()
@@ -843,17 +840,18 @@ export class GitProviderService implements Disposable {
 		}
 	}
 
-	private clearRepoVisibilityCache(keys?: string[]): void {
+	private async clearRepoVisibilityCache(keys?: string[]): Promise<void> {
 		if (keys == null) {
 			this._repoVisibilityCache = undefined;
 			void this.container.storage.delete('repoVisibility');
 		} else {
 			keys?.forEach(key => this._repoVisibilityCache?.delete(key));
+
 			const repoVisibility = Array.from(this._repoVisibilityCache?.entries() ?? []);
 			if (repoVisibility.length === 0) {
-				void this.container.storage.delete('repoVisibility');
+				await this.container.storage.delete('repoVisibility');
 			} else {
-				void this.container.storage.store('repoVisibility', repoVisibility);
+				await this.container.storage.store('repoVisibility', repoVisibility);
 			}
 		}
 	}
@@ -866,7 +864,7 @@ export class GitProviderService implements Disposable {
 
 		const now = Date.now();
 		if (now - visibilityInfo.timestamp > 1000 * 60 * 60 * 24 * 30 /* TTL is 30 days */) {
-			this.clearRepoVisibilityCache([key]);
+			void this.clearRepoVisibilityCache([key]);
 			return undefined;
 		}
 
@@ -882,13 +880,13 @@ export class GitProviderService implements Disposable {
 
 		if (visibilityInfo.visibility === 'public') {
 			if (remotes.length == 0 || !remotes.some(r => r.remoteKey === visibilityInfo.remotesHash)) {
-				this.clearRepoVisibilityCache([key]);
+				void this.clearRepoVisibilityCache([key]);
 				return false;
 			}
 		} else if (visibilityInfo.visibility === 'private') {
 			const remotesHash = getVisibilityCacheKey(remotes);
 			if (remotesHash !== visibilityInfo.remotesHash) {
-				this.clearRepoVisibilityCache([key]);
+				void this.clearRepoVisibilityCache([key]);
 				return false;
 			}
 		}
@@ -903,14 +901,14 @@ export class GitProviderService implements Disposable {
 	}
 
 	@debug()
-	clearAllRepoVisibilityCaches(): void {
-		this.clearRepoVisibilityCache();
+	clearAllRepoVisibilityCaches(): Promise<void> {
+		return this.clearRepoVisibilityCache();
 	}
 
 	@debug()
-	clearAllOpenRepoVisibilityCaches(): void {
+	clearAllOpenRepoVisibilityCaches(): Promise<void> {
 		const openRepoProviderPaths = this.openRepositories.map(r => this.getProvider(r.path).path);
-		this.clearRepoVisibilityCache(openRepoProviderPaths);
+		return this.clearRepoVisibilityCache(openRepoProviderPaths);
 	}
 
 	visibility(): Promise<RepositoriesVisibility>;
@@ -1076,52 +1074,60 @@ export class GitProviderService implements Disposable {
 		async function updateRemoteContext(this: GitProviderService) {
 			const integrations = configuration.get('integrations.enabled');
 
-			const telemetryEnabled = this.container.telemetry.enabled;
 			const remoteProviders = new Set<string>();
+			const reposWithRemotes = new Set<string>();
+			const reposWithHostingIntegrations = new Set<string>();
+			const reposWithHostingIntegrationsConnected = new Set<string>();
 
-			let hasRemotes = false;
-			let hasRemotesWithIntegrations = false;
-			let hasConnectedRemotes = false;
+			async function scanRemotes(repo: Repository) {
+				let hasSupportedIntegration = false;
+				let hasConnectedIntegration = false;
 
-			if (hasRepositories) {
-				for (const repo of this._repositories.values()) {
-					if (telemetryEnabled) {
-						const remotes = await repo.getRemotes();
-						for (const remote of remotes) {
-							remoteProviders.add(remote.provider?.id ?? 'unknown');
+				const remotes = await repo.getRemotes();
+				for (const remote of remotes) {
+					remoteProviders.add(remote.provider?.id ?? 'unknown');
+					reposWithRemotes.add(repo.uri.toString());
+					reposWithRemotes.add(repo.path);
+
+					// Skip if integrations are disabled or if we've already found a connected integration
+					if (!integrations || (hasSupportedIntegration && hasConnectedIntegration)) continue;
+
+					if (remote.hasIntegration()) {
+						hasSupportedIntegration = true;
+						reposWithHostingIntegrations.add(repo.uri.toString());
+						reposWithHostingIntegrations.add(repo.path);
+
+						let connected = remote.maybeIntegrationConnected;
+						// If we don't know if we are connected, only check if the remote is the default or there is only one
+						// TODO@eamodio is the above still a valid requirement?
+						if (connected == null && (remote.default || remotes.length === 1)) {
+							const integration = await remote.getIntegration();
+							connected = await integration?.isConnected();
+						}
+
+						if (connected) {
+							hasConnectedIntegration = true;
+							reposWithHostingIntegrationsConnected.add(repo.uri.toString());
+							reposWithHostingIntegrationsConnected.add(repo.path);
 						}
 					}
-
-					if (!hasConnectedRemotes && integrations) {
-						hasConnectedRemotes = await repo.hasRemoteWithIntegration({ includeDisconnected: false });
-
-						if (hasConnectedRemotes) {
-							hasRemotesWithIntegrations = true;
-							hasRemotes = true;
-						}
-					}
-
-					if (!hasRemotesWithIntegrations && integrations) {
-						hasRemotesWithIntegrations = await repo.hasRemoteWithIntegration({ includeDisconnected: true });
-
-						if (hasRemotesWithIntegrations) {
-							hasRemotes = true;
-						}
-					}
-
-					if (!hasRemotes) {
-						hasRemotes = await repo.hasRemotes();
-					}
-
-					if (hasRemotes && ((hasRemotesWithIntegrations && hasConnectedRemotes) || !integrations)) break;
 				}
 			}
 
-			if (telemetryEnabled) {
+			if (hasRepositories) {
+				void (await Promise.allSettled(map(this._repositories.values(), scanRemotes)));
+			}
+
+			if (this.container.telemetry.enabled) {
 				this.container.telemetry.setGlobalAttributes({
-					'repositories.hasRemotes': hasRemotes,
-					'repositories.hasRichRemotes': hasRemotesWithIntegrations,
-					'repositories.hasConnectedRemotes': hasConnectedRemotes,
+					'repositories.hasRemotes': reposWithRemotes.size !== 0,
+					'repositories.hasRichRemotes': reposWithHostingIntegrations.size !== 0,
+					'repositories.hasConnectedRemotes': reposWithHostingIntegrationsConnected.size !== 0,
+
+					'repositories.withRemotes': reposWithRemotes.size / 2,
+					'repositories.withHostingIntegrations': reposWithHostingIntegrations.size / 2,
+					'repositories.withHostingIntegrationsConnected': reposWithHostingIntegrationsConnected.size / 2,
+
 					'repositories.remoteProviders': join(remoteProviders, ','),
 				});
 				if (this._sendProviderContextTelemetryDebounced == null) {
@@ -1134,9 +1140,15 @@ export class GitProviderService implements Disposable {
 			}
 
 			await Promise.allSettled([
-				setContext('gitlens:hasRemotes', hasRemotes),
-				setContext('gitlens:hasRichRemotes', hasRemotesWithIntegrations),
-				setContext('gitlens:hasConnectedRemotes', hasConnectedRemotes),
+				setContext('gitlens:repos:withRemotes', reposWithRemotes.size ? [...reposWithRemotes] : undefined),
+				setContext(
+					'gitlens:repos:withHostingIntegrations',
+					reposWithHostingIntegrations.size ? [...reposWithHostingIntegrations] : undefined,
+				),
+				setContext(
+					'gitlens:repos:withHostingIntegrationsConnected',
+					reposWithHostingIntegrationsConnected.size ? [...reposWithHostingIntegrationsConnected] : undefined,
+				),
 			]);
 		}
 
@@ -1593,60 +1605,69 @@ export class GitProviderService implements Disposable {
 	@log()
 	async getBranchesAndTagsTipsFn(
 		repoPath: string | Uri | undefined,
-		currentName?: string,
+		suppressName?: string,
 	): Promise<
 		(sha: string, options?: { compact?: boolean | undefined; icons?: boolean | undefined }) => string | undefined
 	> {
-		const [branchesResult, tagsResult] = await Promise.allSettled([
+		if (repoPath == null) return () => undefined;
+
+		const [branchesResult, tagsResult, remotesResult] = await Promise.allSettled([
 			this.getBranches(repoPath),
 			this.getTags(repoPath),
+			this.getRemotes(repoPath),
 		]);
 
 		const branches = getSettledValue(branchesResult)?.values ?? [];
 		const tags = getSettledValue(tagsResult)?.values ?? [];
+		const remotes = getSettledValue(remotesResult) ?? [];
 
 		const branchesAndTagsBySha = groupByFilterMap(
 			(branches as (GitBranch | GitTag)[]).concat(tags as (GitBranch | GitTag)[]),
 			bt => bt.sha,
 			bt => {
-				if (currentName) {
-					if (bt.name === currentName) return undefined;
-					if (bt.refType === 'branch' && bt.getNameWithoutRemote() === currentName) {
-						return { name: bt.name, compactName: bt.getRemoteName(), type: bt.refType };
+				let icon;
+				if (bt.refType === 'branch') {
+					if (bt.remote) {
+						const remote = remotes.find(r => r.name === bt.getRemoteName());
+						icon = `$(${getRemoteThemeIconString(remote)}) `;
+					} else {
+						icon = '$(git-branch) ';
 					}
+				} else {
+					icon = '$(tag) ';
 				}
 
-				return { name: bt.name, compactName: undefined, type: bt.refType };
+				return {
+					name: bt.name,
+					icon: icon,
+					compactName:
+						suppressName && bt.refType === 'branch' && bt.getNameWithoutRemote() === suppressName
+							? bt.getRemoteName()
+							: undefined,
+					type: bt.refType,
+				};
 			},
 		);
 
 		return (sha: string, options?: { compact?: boolean; icons?: boolean }): string | undefined => {
 			const branchesAndTags = branchesAndTagsBySha.get(sha);
-			if (branchesAndTags == null || branchesAndTags.length === 0) return undefined;
+			if (!branchesAndTags?.length) return undefined;
+
+			const tips =
+				suppressName && options?.compact
+					? branchesAndTags.filter(bt => bt.name !== suppressName)
+					: branchesAndTags;
 
 			if (!options?.compact) {
-				return branchesAndTags
-					.map(
-						bt => `${options?.icons ? `${bt.type === 'tag' ? '$(tag)' : '$(git-branch)'} ` : ''}${bt.name}`,
-					)
-					.join(', ');
+				return tips.map(bt => `${options?.icons ? bt.icon : ''}${bt.name}`).join(', ');
 			}
 
-			if (branchesAndTags.length > 1) {
-				const [bt] = branchesAndTags;
-				return `${options?.icons ? `${bt.type === 'tag' ? '$(tag)' : '$(git-branch)'} ` : ''}${
-					bt.compactName ?? bt.name
-				}, ${GlyphChars.Ellipsis}`;
+			if (tips.length > 1) {
+				const [bt] = tips;
+				return `${options?.icons ? bt.icon : ''}${bt.compactName ?? bt.name}, ${GlyphChars.Ellipsis}`;
 			}
 
-			return branchesAndTags
-				.map(
-					bt =>
-						`${options?.icons ? `${bt.type === 'tag' ? '$(tag)' : '$(git-branch)'} ` : ''}${
-							bt.compactName ?? bt.name
-						}`,
-				)
-				.join(', ');
+			return tips.map(bt => `${options?.icons ? bt.icon : ''}${bt.compactName ?? bt.name}`).join(', ');
 		};
 	}
 

@@ -65,6 +65,11 @@ export interface AIProvider<Provider extends AIProviders = AIProviders> extends 
 		diff: string,
 		options?: { cancellation?: CancellationToken; context?: string },
 	): Promise<string | undefined>;
+	generateDraftMessage(
+		model: AIModel<Provider, AIModels<Provider>>,
+		diff: string,
+		options?: { cancellation?: CancellationToken; context?: string; codeSuggestion?: boolean },
+	): Promise<string | undefined>;
 }
 
 export class AIProviderService implements Disposable {
@@ -77,7 +82,7 @@ export class AIProviderService implements Disposable {
 		this._provider?.dispose();
 	}
 
-	get providerId() {
+	get currentProviderId() {
 		return this._provider?.id;
 	}
 
@@ -108,12 +113,14 @@ export class AIProviderService implements Disposable {
 		return models.flatMap(m => getSettledValue(m, []));
 	}
 
-	private async getOrChooseModel(force?: boolean): Promise<AIModel | undefined> {
+	private async getModel(options?: { force?: boolean; silent?: boolean }): Promise<AIModel | undefined> {
 		const cfg = this.getConfiguredModel();
-		if (!force && cfg?.provider != null && cfg?.model != null) {
+		if (!options?.force && cfg?.provider != null && cfg?.model != null) {
 			const model = await this.getOrUpdateModel(cfg.provider, cfg.model);
 			if (model != null) return model;
 		}
+
+		if (options?.silent) return undefined;
 
 		const pick = await showAIModelPicker(this.container, cfg);
 		if (pick == null) return undefined;
@@ -202,26 +209,10 @@ export class AIProviderService implements Disposable {
 		changesOrRepoOrPath: string[] | Repository | Uri,
 		options?: { cancellation?: CancellationToken; context?: string; progress?: ProgressOptions },
 	): Promise<string | undefined> {
-		let changes: string;
-		if (Array.isArray(changesOrRepoOrPath)) {
-			changes = changesOrRepoOrPath.join('\n');
-		} else {
-			const repository = isRepository(changesOrRepoOrPath)
-				? changesOrRepoOrPath
-				: this.container.git.getRepository(changesOrRepoOrPath);
-			if (repository == null) throw new Error('Unable to find repository');
+		const changes: string | undefined = await this.getChanges(changesOrRepoOrPath);
+		if (changes == null) return undefined;
 
-			let diff = await this.container.git.getDiff(repository.uri, uncommittedStaged);
-			if (!diff?.contents) {
-				diff = await this.container.git.getDiff(repository.uri, uncommitted);
-				if (!diff?.contents) throw new Error('No changes to generate a commit message from.');
-			}
-			if (options?.cancellation?.isCancellationRequested) return undefined;
-
-			changes = diff.contents;
-		}
-
-		const model = await this.getOrChooseModel();
+		const model = await this.getModel();
 		if (model == null) return undefined;
 
 		const provider = this._provider!;
@@ -242,6 +233,69 @@ export class AIProviderService implements Disposable {
 			cancellation: options?.cancellation,
 			context: options?.context,
 		});
+	}
+
+	async generateDraftMessage(
+		changesOrRepoOrPath: string[] | Repository | Uri,
+		options?: {
+			cancellation?: CancellationToken;
+			context?: string;
+			progress?: ProgressOptions;
+			codeSuggestion?: boolean;
+		},
+	): Promise<string | undefined> {
+		const changes: string | undefined = await this.getChanges(changesOrRepoOrPath);
+		if (changes == null) return undefined;
+
+		const model = await this.getModel();
+		if (model == null) return undefined;
+
+		const provider = this._provider!;
+
+		const confirmed = await confirmAIProviderToS(model, this.container.storage);
+		if (!confirmed) return undefined;
+		if (options?.cancellation?.isCancellationRequested) return undefined;
+
+		if (options?.progress != null) {
+			return window.withProgress(options.progress, async () =>
+				provider.generateDraftMessage(model, changes, {
+					cancellation: options?.cancellation,
+					context: options?.context,
+					codeSuggestion: options?.codeSuggestion,
+				}),
+			);
+		}
+		return provider.generateDraftMessage(model, changes, {
+			cancellation: options?.cancellation,
+			context: options?.context,
+			codeSuggestion: options?.codeSuggestion,
+		});
+	}
+
+	private async getChanges(
+		changesOrRepoOrPath: string[] | Repository | Uri,
+		options?: { cancellation?: CancellationToken; context?: string; progress?: ProgressOptions },
+	): Promise<string | undefined> {
+		let changes: string;
+		if (Array.isArray(changesOrRepoOrPath)) {
+			changes = changesOrRepoOrPath.join('\n');
+		} else {
+			const repository = isRepository(changesOrRepoOrPath)
+				? changesOrRepoOrPath
+				: this.container.git.getRepository(changesOrRepoOrPath);
+			if (repository == null) throw new Error('Unable to find repository');
+
+			let diff = await this.container.git.getDiff(repository.uri, uncommittedStaged);
+			if (!diff?.contents) {
+				diff = await this.container.git.getDiff(repository.uri, uncommitted);
+				if (!diff?.contents) throw new Error('No changes to generate a commit message from.');
+			}
+			if (options?.cancellation?.isCancellationRequested) return undefined;
+
+			changes = diff.contents;
+		}
+
+		return changes;
 	}
 
 	async explainCommit(
@@ -276,7 +330,7 @@ export class AIProviderService implements Disposable {
 		const diff = await this.container.git.getDiff(commit.repoPath, commit.sha);
 		if (!diff?.contents) throw new Error('No changes found to explain.');
 
-		const model = await this.getOrChooseModel();
+		const model = await this.getModel();
 		if (model == null) return undefined;
 
 		const provider = this._provider!;
@@ -301,14 +355,58 @@ export class AIProviderService implements Disposable {
 		});
 	}
 
-	reset() {
-		const { providerId } = this;
-		if (providerId == null) return;
+	async reset(all?: boolean) {
+		let { _provider: provider } = this;
+		if (provider == null) {
+			// If we have no provider, try to get the current model (which will load the provider)
+			await this.getModel({ silent: true });
+			provider = this._provider;
+		}
 
-		void this.container.storage.deleteSecret(`gitlens.${providerId}.key`);
+		const resetCurrent: MessageItem = { title: `Reset Current` };
+		const resetAll: MessageItem = { title: 'Reset All' };
+		const cancel: MessageItem = { title: 'Cancel', isCloseAffordance: true };
 
-		void this.container.storage.delete(`confirm:ai:tos:${providerId}`);
-		void this.container.storage.deleteWorkspace(`confirm:ai:tos:${providerId}`);
+		let result;
+		if (all) {
+			result = resetAll;
+		} else if (provider == null) {
+			result = await window.showInformationMessage(
+				`Do you want to reset all of the stored AI keys?`,
+				{ modal: true },
+				resetAll,
+				cancel,
+			);
+		} else {
+			result = await window.showInformationMessage(
+				`Do you want to reset the stored key for the current provider (${provider.name}) or reset all of the stored AI keys?`,
+				{ modal: true },
+				resetCurrent,
+				resetAll,
+				cancel,
+			);
+		}
+
+		if (provider != null && result === resetCurrent) {
+			void env.clipboard.writeText((await this.container.storage.getSecret(`gitlens.${provider.id}.key`)) ?? '');
+			void this.container.storage.deleteSecret(`gitlens.${provider.id}.key`);
+
+			void this.container.storage.delete(`confirm:ai:tos:${provider.id}`);
+			void this.container.storage.deleteWorkspace(`confirm:ai:tos:${provider.id}`);
+		} else if (result === resetAll) {
+			const keys = [];
+			for (const [providerId] of _supportedProviderTypes) {
+				keys.push(await this.container.storage.getSecret(`gitlens.${providerId}.key`));
+			}
+			void env.clipboard.writeText(keys.join('\n'));
+
+			for (const [providerId] of _supportedProviderTypes) {
+				void this.container.storage.deleteSecret(`gitlens.${providerId}.key`);
+			}
+
+			void this.container.storage.deleteWithPrefix(`confirm:ai:tos`);
+			void this.container.storage.deleteWorkspaceWithPrefix(`confirm:ai:tos`);
+		}
 	}
 
 	supports(provider: AIProviders | string) {
@@ -316,7 +414,7 @@ export class AIProviderService implements Disposable {
 	}
 
 	async switchModel() {
-		void (await this.getOrChooseModel(true));
+		void (await this.getModel({ force: true }));
 	}
 }
 
@@ -425,4 +523,18 @@ export async function getApiKey(
 	}
 
 	return apiKey;
+}
+
+export function extractDraftMessage(
+	message: string,
+	splitter = '\n\n',
+): { title: string; description: string | undefined } {
+	const firstBreak = message.indexOf(splitter) ?? 0;
+	const title = firstBreak > -1 ? message.substring(0, firstBreak) : message;
+	const description = firstBreak > -1 ? message.substring(firstBreak + splitter.length) : undefined;
+
+	return {
+		title: title,
+		description: description,
+	};
 }
