@@ -17526,7 +17526,7 @@
 		"@typescript-eslint/parser": "7.10.0",
 		"@vscode/test-electron": "2.3.10",
 		"@vscode/test-web": "0.0.54",
-		"@vscode/vsce": "2.26.1",
+		"@vscode/vsce": "2.31.1",
 		"circular-dependency-plugin": "5.2.2",
 		"clean-webpack-plugin": "4.0.0",
 		"concurrently": "8.2.2",
