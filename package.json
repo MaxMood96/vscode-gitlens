@@ -27525,7 +27525,7 @@
 		"schema-utils": "4.3.3",
 		"sharp": "0.34.5",
 		"sinon": "21.0.1",
-		"svgo": "4.0.0",
+		"svgo": "4.0.1",
 		"terser-webpack-plugin": "5.3.16",
 		"tinybench": "6.0.0",
 		"ts-loader": "9.5.4",
