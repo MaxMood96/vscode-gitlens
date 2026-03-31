@@ -27459,7 +27459,7 @@
 		"esbuild-loader": "4.4.2",
 		"esbuild-node-externals": "1.20.1",
 		"esbuild-sass-plugin": "3.6.0",
-		"eslint": "9.39.4",
+		"eslint": "10.0.0",
 		"eslint-import-resolver-typescript": "4.4.4",
 		"eslint-plugin-anti-trojan-source": "1.1.2",
 		"eslint-plugin-import-x": "4.16.1",
