@@ -29688,7 +29688,7 @@
 		"oxlint": "1.75.0",
 		"oxlint-tsgolint": "7.0.2001",
 		"playwright": "1.61.1",
-		"postcss": "8.5.16",
+		"postcss": "8.5.18",
 		"postcss-lit": "1.4.1",
 		"postcss-scss": "4.0.9",
 		"regex-to-strings": "2.1.0",
